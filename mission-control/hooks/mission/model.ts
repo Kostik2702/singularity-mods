@@ -116,6 +116,8 @@ export const MAIN_TYPE = 'главный'
 export const MAX_AGENTS = 100
 /** A working subagent with no event for this long is drawn as "no news". */
 export const SILENT_MS = 5 * 60_000
+/** An ended agent's report line stays on the tree this long, whatever turn it belongs to. */
+export const RECENT_MS = 10 * 60_000
 
 const ENDED: ReadonlySet<AgentPhase> = new Set<AgentPhase>(['done', 'failed', 'aborted', 'denied'])
 const WORKING: ReadonlySet<AgentPhase> = new Set<AgentPhase>(['starting', 'thinking', 'acting', 'waiting'])
@@ -568,10 +570,12 @@ export function buildTree(rows: readonly AgentRow[], turn: number, now: number):
   }
   const keep = new Set<string>()
   for (const r of others) {
-    // An ended agent stays while it belongs to this turn: spawned in it, or ended during it
-    // (a background agent spawned earlier reports now, and its report line must show).
+    // An ended agent stays while it belongs to this turn (spawned in it, or ended during it)
+    // or while its report is fresh: a background agent spawned earlier reports now, and it
+    // may end just before the engine starts the turn that tells main (seen live: 137 ms).
     const endedThisTurn = r.endedAt !== null && r.endedAt > main.startedAt
-    if (isEnded(r.phase) && r.turn !== turn && !endedThisTurn) continue
+    const isFresh = r.endedAt !== null && now - r.endedAt <= RECENT_MS
+    if (isEnded(r.phase) && r.turn !== turn && !endedThisTurn && !isFresh) continue
     let cur: string = r.id
     while (cur !== MAIN && !keep.has(cur)) {
       keep.add(cur)

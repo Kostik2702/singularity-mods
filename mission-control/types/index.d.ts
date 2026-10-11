@@ -142,7 +142,7 @@ export type AgentRow = {
   current: CurrentAction | null
   /** The first sentence of its report (or a refusal's reason), ≤ 160. */
   report: string | null
-  /** Tokens its turns reported, all kinds summed. */
+  /** New tokens its turns reported: input, output and cache written; cache reads left out. */
   tokens: number
   /** The parent's Agent call id. */
   toolUseId: string | null

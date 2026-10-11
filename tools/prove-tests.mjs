@@ -25,6 +25,8 @@ const MUTANTS = [
   { name: 'heading-as-report', file: 'hooks/mission/model.ts', from: 'const said = sentences(prose(text))', to: 'const said = sentences(text)' },
   { name: 'list-reopens-ended', file: 'hooks/mission/model.ts', from: 'if (isEnded(held)) return held', to: 'if (held === "never") return held' },
   { name: 'parallel-call-reads-done', file: 'hooks/mission/model.ts', from: 'current: at.fallback ?? ended', to: 'current: ended' },
+  { name: 'fresh-report-folded', file: 'hooks/mission/model.ts', from: 'const isFresh = r.endedAt !== null && now - r.endedAt <= RECENT_MS', to: 'const isFresh = false' },
+  { name: 'tokens-count-cache-reads', file: 'hooks/register.tsx', from: "(u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)", to: "(u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)" },
   { name: 'reason-unbounded', file: 'hooks/mission/pane.tsx', from: 'const said = clip(text, line * 2)', to: 'const said = text' },
 ]
 

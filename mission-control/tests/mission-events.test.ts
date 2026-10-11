@@ -30,7 +30,8 @@ test('a subagent’s life reaches the rows through the engine’s events', async
     intent: 'Сверяю вывод mb search с регэкспом.',
     report: 'Корень: регэксп не ловит минус.',
     task: 'Найди корень бага в parse.ts. Отчитайся.',
-    tokens: 330,
+    // input 10 + output 20 + cache written 0; the 300 read from cache are not new work (the engine's own figure, seen live).
+    tokens: 30,
   })
   expect(a1?.current).toMatchObject({ done: 'нашёл файлы', target: '*.ts', status: 'ok' })
   expect(s.actions.at(-1)).toMatchObject({ agentId: 'a1', done: 'нашёл файлы', status: 'ok' })

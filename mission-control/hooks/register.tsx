@@ -256,10 +256,9 @@ export const register: Register = on => {
       async () => {
         const now = await $.clock.now()
         const u = e.usage
-        const tokens =
-          u === undefined
-            ? 0
-            : (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+        // New work only: every step re-reads the cached context, so cache reads would count it
+        // again per step (seen live: 77k summed against the engine's own 27k for one agent).
+        const tokens = u === undefined ? 0 : (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
         await update($, agentsA, rows => applyComplete(rows, { agentId: e.agentId ?? null, reason: e.reason, answer: e.answer, tokens, now }))
       },
     ])

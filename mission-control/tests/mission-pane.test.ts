@@ -39,7 +39,7 @@ test('main thinking shows its time; ended, refused and nested agents read at a g
     expect(await ui.find({ text: /◌ главный · ход 1 · 12с/ })).toBeDefined()
     expect(await ui.find({ text: /думает 12с/ })).toBeDefined()
     // Ended at the clock's start: 0 s, its tokens, then the report's first sentence.
-    expect(await ui.find({ text: /✓ investigator · 0с · 330 ток\. — Корень: регэксп\./ })).toBeDefined()
+    expect(await ui.find({ text: /✓ investigator · 0с · 30 ток\. — Корень: регэксп\./ })).toBeDefined()
     expect(await ui.find({ text: /⊘ coder · отклонён — coder is not allowed here/ })).toBeDefined()
     expect(await ui.find({ text: /│ └─◌ Explore/ })).toBeDefined()
     await ui.unmount()
@@ -78,12 +78,13 @@ test('a silent subagent reads "no news" after five minutes', async ($, on) => {
   await ui.unmount()
 })
 
-test('ended agents of earlier turns fold into one line', async ($, on) => {
-  engineBeneath(on)
+test('ended agents of earlier turns fold into one line once their reports are stale', async ($, on) => {
+  const engine = engineBeneath(on)
   await submit($, 'one')
   await $.turn.start({ text: 'one', turnId: 't1' })
   await spawn($, { subagentType: 'Explore', description: 'старое' })
   await complete($, { agentId: 'a1', answer: 'ok' })
+  await engine.clock.advance(11 * 60_000)
   await submit($, 'two')
   await $.turn.start({ text: 'two', turnId: 't2' })
   const ui = await mountAgents($, 'terminal')

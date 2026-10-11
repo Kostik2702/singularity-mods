@@ -4,6 +4,7 @@ import type { AgentRow, CurrentAction } from '../types'
 import {
   MAIN,
   MAX_AGENTS,
+  RECENT_MS,
   SILENT_MS,
   applyComplete,
   applyList,
@@ -262,7 +263,8 @@ describe('the tree', () => {
     rows = applySpawn(rows, facts({ agentId: 'child', toolUseId: 'tu3', parentAgentId: 'parent' }))
     rows = applyComplete(rows, { agentId: 'parent', reason: 'answer', answer: 'ok', tokens: 0, now: T0 })
     rows = applyTurnStart(rows, { turn: 2, now: T0 + 10 })
-    const tree = buildTree(rows, 2, T0 + 10)
+    // Folded once their reports are stale (RECENT_MS); fresh ones stay (see the review tests).
+    const tree = buildTree(rows, 2, T0 + RECENT_MS + 1000)
     expect(tree.lines.map(l => l.row.id)).toEqual([MAIN, 'parent', 'child'])
     expect(tree.hidden).toBe(1)
   })
@@ -277,9 +279,20 @@ describe('review fixes 2026-10-11', () => {
     rows = applyComplete(rows, { agentId: 'old', reason: 'answer', answer: 'ok', tokens: 0, now: T0 + 50 })
     rows = applyTurnStart(rows, { turn: 2, now: T0 + 100 })
     rows = applyComplete(rows, { agentId: 'bg', reason: 'answer', answer: 'Нашёл 3 места. Детали ниже.', tokens: 0, now: T0 + 200 })
-    const tree = buildTree(rows, 2, T0 + 300)
+    const tree = buildTree(rows, 2, T0 + RECENT_MS + 1000)
     expect(tree.lines.map(l => l.row.id)).toEqual([MAIN, 'bg'])
     expect(tree.hidden).toBe(1)
+  })
+
+  // Seen live 2026-10-11 (background e2e): the agent ended 137 ms BEFORE the engine started the
+  // notification turn, so "ended during this turn" missed it. A fresh report stays for RECENT_MS.
+  test('a report stays while it is fresh, even when the agent ended just before the turn began', () => {
+    let rows = applyTurnStart([], { turn: 1, now: T0 })
+    rows = applySpawn(rows, facts({ agentId: 'bg', isBackground: true }))
+    rows = applyComplete(rows, { agentId: 'bg', reason: 'answer', answer: 'Нашёл README.', tokens: 0, now: T0 + 90 })
+    rows = applyTurnStart(rows, { turn: 2, now: T0 + 100 })
+    expect(buildTree(rows, 2, T0 + 300).lines.map(l => l.row.id)).toEqual([MAIN, 'bg'])
+    expect(buildTree(rows, 2, T0 + 90 + RECENT_MS + 1).lines.map(l => l.row.id)).toEqual([MAIN])
   })
 
   // #8: Read (slow) and Grep (fast) in parallel; Grep ends first; the row must still show Read running.
