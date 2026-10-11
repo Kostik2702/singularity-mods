@@ -1,30 +1,131 @@
 import { atom, read, update } from 'claude-code'
-import type { On } from 'claude-code'
+import type { On, TurnStepResult } from 'claude-code'
 
-import type { Action } from '../../types'
+import type { Action, CurrentAction } from '../../types'
 import { describeAction } from '../lib/actions'
+import { COLORS } from '../lib/viz'
+import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
+import { drawAgentsPane } from './pane'
 
+// Mission control's own observers and its tab. What it shares with the memory
+// feature or runs on a timer (session.start, turn.complete, /mc, the list
+// reconcile, the redraw tick, opening the tab) lives in register.tsx: the engine
+// takes one unmatched hook per event per module and never follows `$` into an
+// imported function.
+
+export const AGENTS_PANE = 'agents'
 const SNAPSHOT_TOOL = 'mcp__mission-control__snapshot'
 const MAX_ACTIONS = 300
 
-// The engine's scan accepts only an atom made in the same file (see memory/hooks.tsx).
+// The engine's scan accepts only an atom made in the same file: every file declares
+// the values it reads or writes, with the same key and initial value as the others.
+const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const actionsA = atom({ plugin: 'mission-control', key: 'actions' } as const, [])
 const turnA = atom({ plugin: 'mission-control', key: 'turn' } as const, 0)
 
+function reason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export function registerMission(on: On): void {
-  // Every tool call, in plain words: logged as it starts, settled as it ends.
+  on('turn.start', async ($, e, next) => {
+    const res = await next(e)
+    const turn = await read($, turnA)
+    const now = await $.clock.now()
+    await update($, agentsA, rows => applyTurnStart(rows, { turn, now }))
+    return res
+  }).catch(($, e, next) => next(e))
+
+  // One model request: the loop thinks while it streams; its text's last sentence is the reason.
+  on('turn.step', async function* ($, e, next) {
+    const agentId = e.agentId ?? null
+    try {
+      const now = await $.clock.now()
+      await update($, agentsA, rows => applyStepStart(rows, { agentId, now }))
+    } catch {
+      // the step goes on unobserved
+    }
+    const res = yield* next(e)
+    try {
+      // `res` is undefined when nothing streamed beneath (seen in the test kit): read it defensively.
+      const answer = (res as TurnStepResult | undefined)?.answer ?? ''
+      if (answer.length > 0) {
+        const now = await $.clock.now()
+        await update($, agentsA, rows => applyStepEnd(rows, { agentId, answer, now }))
+      }
+    } catch {
+      // never let the observer fail the model's stream
+    }
+    return res
+  })
+
+  // Every tool call, in plain words: the feed, and the calling loop's current action.
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
     if (tool === SNAPSHOT_TOOL) return next(e)
+    const agentId = e.agentId ?? null
     const startedAt = await $.clock.now()
     const id = e.tool_use_id ?? `${tool}-${startedAt}`
     const words = describeAction(tool, e as unknown as Record<string, unknown>)
-    const action: Action = { id, turn: await read($, turnA), ...words, status: 'run', agentId: e.agentId ?? null, startedAt, ms: null }
+    const action: Action = { id, turn: await read($, turnA), ...words, status: 'run', agentId, startedAt, ms: null }
+    const current: CurrentAction = { id, ...words, status: 'run', startedAt, ms: null }
     await update($, actionsA, list => [...list, action].slice(-MAX_ACTIONS))
+    await update($, agentsA, rows => applyToolStart(rows, { agentId, action: current, now: startedAt }))
     const ran = await next(e)
     const status: Action['status'] = ran.deny !== undefined ? 'denied' : ran.isError === true ? 'error' : 'ok'
-    const ms = (await $.clock.now()) - startedAt
+    const endedAt = await $.clock.now()
+    const ms = endedAt - startedAt
     await update($, actionsA, list => list.map(a => (a.id === id ? { ...a, status, ms } : a)))
+    await update($, agentsA, rows => applyToolEnd(rows, { agentId, id, status, ms, now: endedAt }))
     return ran
   }).catch(($, e, next) => next(e))
+
+  on('agent.spawn', async ($, e, next) => {
+    const res = await next(e)
+    const now = await $.clock.now()
+    const turn = await read($, turnA)
+    await update($, agentsA, rows =>
+      applySpawn(rows, {
+        agentId: res.agentId ?? null,
+        deny: res.deny ?? null,
+        toolUseId: e.tool_use_id,
+        parentAgentId: e.parentAgentId ?? null,
+        subagentType: e.subagentType,
+        description: e.description,
+        prompt: e.prompt,
+        model: res.model ?? e.model ?? null,
+        name: e.name ?? null,
+        isBackground: e.background,
+        isTeammate: e.isTeammate === true,
+        workflowRunId: e.workflow?.runId ?? null,
+        turn,
+        now,
+      }),
+    )
+    return res
+  }).catch(($, e, next) => next(e))
+
+  // The Agents tab: drawn by pane.tsx from the rows and the feed.
+  on('ui.render', { component: 'Pane', requestId: AGENTS_PANE }, async ($, e) => {
+    const data = {
+      agents: await read($, agentsA),
+      actions: await read($, actionsA),
+      turn: await read($, turnA),
+      now: await $.clock.now(),
+      viewAgentId: e.props.view.agentId ?? null,
+    }
+    return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows)
+  }).catch(($, e, next) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1}>
+        <Text color={COLORS.critical} bold>
+          mission-control: вкладка «Агенты» упала
+        </Text>
+        <Text color={COLORS.ink2} wrap="wrap">
+          {reason(next.error)}
+        </Text>
+      </Box>
+    )
+  })
 }

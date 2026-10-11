@@ -4,7 +4,9 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Alerts, ClaudeMdFile, TurnRow } from '../types'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
 import { countDoctor } from './lib/parse'
-import { registerMission } from './mission/hooks'
+import { AGENTS_PANE, registerMission } from './mission/hooks'
+import { applyComplete, applyList, clearEnded, needsReconcile, needsTick } from './mission/model'
+import type { ListedAgent } from './mission/model'
 
 // The module's entry and its lifecycle. The engine takes one unmatched hook per
 // event per module and never follows `$` into an imported function, so everything
@@ -14,8 +16,13 @@ import { registerMission } from './mission/hooks'
 
 const SNAPSHOT_TOOL = 'mcp__mission-control__snapshot'
 const MEMORY_TITLE = 'Память'
+const AGENTS_TITLE = 'Агенты'
 const MAX_TURNS = 50
 const ALERTS_EVERY_MS = 5 * 60_000
+/** Timers on the Agents tab are redrawn once a second, and only while something works. */
+const TICK_MS = 1000
+/** The engine's own agent list is read every 2 s, and only while a subagent works. */
+const LIST_MS = 2000
 
 // The engine's scan accepts only an atom made in the same file: every file declares
 // the values it reads or writes, with the same key and initial value as the others.
@@ -124,6 +131,50 @@ async function openMemoryPane($: $): Promise<void> {
   }
 }
 
+/** Opens the Agents tab unless it is open; records what the engine answered, so a tab that never shows can be explained. */
+async function openAgentsPane($: $): Promise<void> {
+  try {
+    if ((await $.ui.panes()).some(p => p.id === AGENTS_PANE)) {
+      await update($, agentsPaneStatusA, () => 'already open')
+      return
+    }
+    const opened = await $.ui.open({ id: AGENTS_PANE, title: AGENTS_TITLE })
+    await update($, agentsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
+  } catch (err) {
+    await update($, agentsPaneStatusA, () => `open failed: ${reason(err)}`)
+  }
+}
+
+/** Redraws while something works, so the Agents tab's timers stay true; does nothing when all is quiet. */
+async function tick($: $): Promise<void> {
+  try {
+    if (needsTick(await read($, agentsA), await $.clock.now())) $.ui.invalidate('ui.render')
+  } catch {
+    // a missed redraw is drawn by the next tick
+  }
+}
+
+/** Squares the rows with $.agent.list(); `always` reads it even when nothing works (a load, a reload). */
+async function reconcile($: $, always: boolean): Promise<void> {
+  try {
+    if (!always && !needsReconcile(await read($, agentsA))) return
+    const listed: ListedAgent[] = (await $.agent.list()).map(a => ({
+      id: a.id,
+      type: a.type,
+      description: a.description,
+      status: a.status,
+      ...(a.parentId === undefined ? {} : { parentId: a.parentId }),
+      ...(a.name === undefined ? {} : { name: a.name }),
+      isTeammate: a.teammateId !== undefined,
+    }))
+    const turn = await read($, turnA)
+    const now = await $.clock.now()
+    await update($, agentsA, rows => applyList(rows, listed, { turn, now }))
+  } catch {
+    // no session bound yet, or a host without agents: the events still keep the rows
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await fanOut([
@@ -146,6 +197,19 @@ export const register: Register = on => {
         $.clock.every(ALERTS_EVERY_MS, () => void refreshAlerts($))
         // Idle times are drawn from the clock: redraw once a minute so they stay true.
         $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
+      },
+      async () => {
+        await $.command.register({
+          name: 'mc',
+          description: 'Mission control: кто из агентов чем занят и почему; /mc close|clear',
+          argumentHint: '[close|clear]',
+        })
+      },
+      async () => {
+        $.clock.every(TICK_MS, () => void tick($))
+        $.clock.every(LIST_MS, () => void reconcile($, false))
+        // A reload (or the mod set up mid-session) finds agents already at work: learn them now.
+        await reconcile($, true)
       },
     ])
     // After a reload a pane may be up with the old module's drawing: redraw once it is (re)opened.
@@ -184,9 +248,37 @@ export const register: Register = on => {
         await update($, lastEndA, () => endedAt)
         await refreshClaudeMd($)
       },
+      // Mission control: the loop's row ends (main waits, a subagent reports, a teammate idles).
+      async () => {
+        const now = await $.clock.now()
+        const u = e.usage
+        const tokens =
+          u === undefined
+            ? 0
+            : (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+        await update($, agentsA, rows => applyComplete(rows, { agentId: e.agentId ?? null, reason: e.reason, answer: e.answer, tokens, now }))
+      },
     ])
     return answer
   }).catch(($, e, next) => next(e))
+
+  on('command.run', { command: 'mc' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg === 'close') {
+      await $.ui.close({ id: AGENTS_PANE })
+      return { text: 'mission-control: вкладка «Агенты» закрыта (/mc — открыть).' }
+    }
+    if (arg === 'clear') {
+      const turn = await read($, turnA)
+      await update($, agentsA, rows => clearEnded(rows))
+      await update($, actionsA, list => list.filter(a => a.turn === turn))
+      return { text: 'mission-control: завершённые агенты и лента прошлых ходов убраны.' }
+    }
+    if (arg.length > 0) return { text: `mission-control: не знаю «${arg}». /mc — открыть вкладку, /mc close, /mc clear.` }
+    const opened = await $.ui.open({ id: AGENTS_PANE, title: AGENTS_TITLE })
+    await update($, agentsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
+    return { text: opened.isPlaced ? 'mission-control: вкладка «Агенты» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
+  }).catch(($, e, next) => ({ text: `mission-control: /mc упала: ${reason(next.error)}` }))
 
   on('command.run', { command: 'mem' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
