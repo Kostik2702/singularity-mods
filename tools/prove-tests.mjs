@@ -17,6 +17,9 @@ const MUTANTS = [
   { name: 'no-view-marker', file: 'hooks/mission/pane.tsx', from: 'const viewed = !isMain && d.viewAgentId === row.id', to: 'const viewed = false' },
   { name: 'reconcile-never-on-timer', file: 'hooks/register.tsx', from: 'if (!always && !needsReconcile(await read($, agentsA))) return', to: 'if (!always) return' },
   { name: 'memory-log-back', file: 'hooks/memory/pane.tsx', from: '{heroBlock}', to: '{heroBlock}<Text>поискал в памяти</Text>' },
+  { name: 'early-step-dropped', file: 'hooks/mission/model.ts', from: 'return trimAgents([...rows, provisionalRow(agentId, now)])', to: 'return [...rows]' },
+  { name: 'split-inside-brackets', file: 'hooks/mission/model.ts', from: 'if (depth === 0 && isEnd &&', to: 'if (isEnd &&' },
+  { name: 'fork-drawn', file: 'hooks/mission/model.ts', from: "rows.filter(r => r.id !== MAIN && isConfirmed(r))", to: 'rows.filter(r => r.id !== MAIN)' },
 ]
 
 let missed = 0

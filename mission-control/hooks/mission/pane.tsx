@@ -3,7 +3,7 @@ import type { ElementTable } from 'claude-code'
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { fmtTokens } from '../lib/parse'
 import { COLORS, fmtDur, plural, rule } from '../lib/viz'
-import { MAIN, buildTree, isEnded, isSilent, isWorking } from './model'
+import { MAIN, buildTree, isConfirmed, isEnded, isSilent, isWorking } from './model'
 import type { TreeLine } from './model'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
@@ -186,7 +186,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
   const who = (agentId: string | null): string => {
     if (agentId === null) return 'главный'
     const row = byId.get(agentId)
-    return row === undefined ? '↳фон' : `↳${row.name ?? row.type}`
+    return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
   }
   const used = out.length + (tree.hidden > 0 ? 1 : 0)
   const room = Math.max(FEED_MIN, rows - used - 6)

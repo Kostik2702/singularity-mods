@@ -29,11 +29,38 @@ export function plainText(text: string): string {
     .replace(/(^|[\s(«"])[*_]([^*_\n]+)[*_](?=[\s).,!?:;»"]|$)/gm, '$1$2')
 }
 
-/** The plain sentences of a text, in order: split after . ! ? … followed by a space, and at line breaks. */
+const OPENERS = new Set(['(', '[', '{', '«', '“', '„'])
+const CLOSERS = new Set([')', ']', '}', '»', '”'])
+const ENDS = new Set(['.', '!', '?', '…'])
+
+/**
+ * One line cut into sentences after . ! ? … followed by a space, never inside
+ * brackets or quotes: «запусти субагента… вызови snapshot» is one phrase (seen live).
+ * A closing bracket or quote right after the end mark ends the sentence with it.
+ */
+function splitLine(line: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i] ?? ''
+    if (OPENERS.has(ch)) depth += 1
+    else if (CLOSERS.has(ch)) depth = Math.max(0, depth - 1)
+    const isEnd = ENDS.has(ch) || (CLOSERS.has(ch) && ENDS.has(line[i - 1] ?? ''))
+    if (depth === 0 && isEnd && /\s/.test(line[i + 1] ?? '')) {
+      parts.push(line.slice(start, i + 1))
+      start = i + 1
+    }
+  }
+  parts.push(line.slice(start))
+  return parts
+}
+
+/** The plain sentences of a text, in order: split after a sentence end outside brackets, and at line breaks. */
 export function sentences(text: string): string[] {
   return plainText(text)
     .split(/\n+/)
-    .flatMap(line => line.split(/(?<=[.!?…])\s+/))
+    .flatMap(splitLine)
     .map(part => part.replace(/\s+/g, ' ').trim())
     .filter(part => /[\p{L}\p{N}]/u.test(part))
 }
@@ -101,7 +128,18 @@ export function mainRow(now: number): AgentRow {
     report: null,
     tokens: 0,
     toolUseId: null,
+    isConfirmed: true,
   }
+}
+
+/** A row a spawn or the engine's list has vouched for (a row from before a reload, with no flag, counts). */
+export function isConfirmed(r: AgentRow): boolean {
+  return r.isConfirmed !== false
+}
+
+/** A loop only its own events know so far: kept, never drawn, until a spawn or the list confirms it. */
+function provisionalRow(agentId: string, now: number): AgentRow {
+  return { ...mainRow(now), id: agentId, parentId: MAIN, turn: -1, type: '', isConfirmed: false }
 }
 
 /** `rows` with row `id` replaced by `fn(row)`; the same rows when there is no such row. */
@@ -119,24 +157,40 @@ function loopId(agentId: string | null): string {
   return agentId ?? MAIN
 }
 
-/** At most MAX_AGENTS rows: the oldest ended ones leave first; main and working ones always stay. */
+/**
+ * Rows with a row for the event's loop: main made on first use; an agent no row
+ * follows yet gets a provisional one, since its first request can stream before
+ * agent.spawn settles (seen live) and the spawn must find its first step.
+ */
+function withLoop(rows: readonly AgentRow[], agentId: string | null, now: number): AgentRow[] {
+  if (agentId === null) return withMain(rows, now)
+  if (rows.some(r => r.id === agentId)) return [...rows]
+  return trimAgents([...rows, provisionalRow(agentId, now)])
+}
+
+/**
+ * At most MAX_AGENTS rows. Unconfirmed loops leave first, then the oldest ended
+ * agents; main and confirmed working ones always stay.
+ */
 export function trimAgents(rows: readonly AgentRow[]): AgentRow[] {
   let excess = rows.length - MAX_AGENTS
   if (excess <= 0) return [...rows]
   const drop = new Set<string>()
-  for (const r of rows) {
-    if (excess <= 0) break
-    if (r.id !== MAIN && isEnded(r.phase)) {
-      drop.add(r.id)
-      excess -= 1
+  for (const pass of [(r: AgentRow) => !isConfirmed(r), (r: AgentRow) => isEnded(r.phase)]) {
+    for (const r of rows) {
+      if (excess <= 0) break
+      if (r.id !== MAIN && !drop.has(r.id) && pass(r)) {
+        drop.add(r.id)
+        excess -= 1
+      }
     }
   }
   return rows.filter(r => !drop.has(r.id))
 }
 
-/** Rows without the ended agents: main and every working or idle one stay. */
+/** Rows without the ended agents and the unconfirmed loops: main and every confirmed working or idle one stay. */
 export function clearEnded(rows: readonly AgentRow[]): AgentRow[] {
-  return rows.filter(r => r.id === MAIN || !isEnded(r.phase))
+  return rows.filter(r => r.id === MAIN || (isConfirmed(r) && !isEnded(r.phase)))
 }
 
 /** The main loop starts a turn: it thinks, its counters, last action and reason start over. */
@@ -202,6 +256,7 @@ function newAgent(f: SpawnFacts, id: string): AgentRow {
     report: null,
     tokens: 0,
     toolUseId: f.toolUseId,
+    isConfirmed: true,
   }
 }
 
@@ -218,15 +273,33 @@ export function applySpawn(rows: readonly AgentRow[], f: SpawnFacts): AgentRow[]
     return trimAgents([...base, { ...newAgent(f, id), phase: 'denied', endedAt: f.now, report: clip(f.deny, INTENT_MAX) }])
   }
   if (f.agentId === null) return base
-  if (base.some(r => r.id === f.agentId)) {
-    return patch(base, f.agentId, r => ({ ...r, phase: 'starting', phaseAt: f.now, endedAt: null, lastEventAt: f.now }))
+  const known = base.find(r => r.id === f.agentId)
+  if (known !== undefined && !isConfirmed(known)) {
+    // Its first events came before the spawn settled: keep what they recorded, add who it is.
+    return patch(base, known.id, r => ({
+      ...newAgent(f, r.id),
+      phase: r.phase === 'idle' ? 'starting' : r.phase,
+      phaseAt: r.phaseAt,
+      startedAt: Math.min(r.startedAt, f.now),
+      endedAt: r.endedAt,
+      lastEventAt: Math.max(r.lastEventAt, f.now),
+      steps: r.steps,
+      tools: r.tools,
+      intent: r.intent,
+      current: r.current,
+      report: r.report,
+      tokens: r.tokens,
+    }))
+  }
+  if (known !== undefined) {
+    return patch(base, known.id, r => ({ ...r, phase: 'starting', phaseAt: f.now, endedAt: null, lastEventAt: f.now }))
   }
   return trimAgents([...base, newAgent(f, f.agentId)])
 }
 
-/** A model request begins in a loop: it thinks. A loop no row follows (the engine's own forks) is left alone. */
+/** A model request begins in a loop: it thinks. A loop no row follows yet gets a provisional one. */
 export function applyStepStart(rows: readonly AgentRow[], at: { agentId: string | null; now: number }): AgentRow[] {
-  const base = at.agentId === null ? withMain(rows, at.now) : [...rows]
+  const base = withLoop(rows, at.agentId, at.now)
   return patch(base, loopId(at.agentId), r => ({
     ...r,
     phase: 'thinking',
@@ -240,7 +313,7 @@ export function applyStepStart(rows: readonly AgentRow[], at: { agentId: string 
 /** A model request ended: its text's last sentence is the loop's reason for what it does next. */
 export function applyStepEnd(rows: readonly AgentRow[], at: { agentId: string | null; answer: string; now: number }): AgentRow[] {
   const intent = lastSentence(at.answer)
-  return patch([...rows], loopId(at.agentId), r => ({ ...r, lastEventAt: at.now, intent: intent ?? r.intent }))
+  return patch(withLoop(rows, at.agentId, at.now), loopId(at.agentId), r => ({ ...r, lastEventAt: at.now, intent: intent ?? r.intent }))
 }
 
 /** A tool call begins in a loop: it acts, and the call is its current action. */
@@ -248,7 +321,7 @@ export function applyToolStart(
   rows: readonly AgentRow[],
   at: { agentId: string | null; action: CurrentAction; now: number },
 ): AgentRow[] {
-  const base = at.agentId === null ? withMain(rows, at.now) : [...rows]
+  const base = withLoop(rows, at.agentId, at.now)
   return patch(base, loopId(at.agentId), r => ({
     ...r,
     phase: 'acting',
@@ -264,7 +337,7 @@ export function applyToolEnd(
   rows: readonly AgentRow[],
   at: { agentId: string | null; id: string; status: CurrentAction['status']; ms: number; now: number },
 ): AgentRow[] {
-  return patch([...rows], loopId(at.agentId), r => ({
+  return patch(withLoop(rows, at.agentId, at.now), loopId(at.agentId), r => ({
     ...r,
     lastEventAt: at.now,
     current: r.current !== null && r.current.id === at.id ? { ...r.current, status: at.status, ms: at.ms } : r.current,
@@ -282,7 +355,7 @@ export type CompleteFacts = {
 
 /** A loop's turn ended: main waits for the person, a subagent is done (a teammate idles), failed or stopped. */
 export function applyComplete(rows: readonly AgentRow[], f: CompleteFacts): AgentRow[] {
-  const base = f.agentId === null ? withMain(rows, f.now) : [...rows]
+  const base = withLoop(rows, f.agentId, f.now)
   return patch(base, loopId(f.agentId), r => {
     const isMain = r.id === MAIN
     const phase: AgentPhase =
@@ -356,8 +429,23 @@ export function applyList(rows: readonly AgentRow[], listed: readonly ListedAgen
       next = [...next, listedRow(item, at.turn, at.now)]
       continue
     }
-    const phase = phaseFromList(item.status, known.phase)
-    if (phase === known.phase) continue
+    if (!isConfirmed(known)) {
+      // The list names a loop only its events knew: it is a real agent, with a type and a task.
+      const confirmed = listedRow(item, at.turn, at.now)
+      next = patch(next, item.id, r => ({
+        ...r,
+        parentId: confirmed.parentId,
+        turn: confirmed.turn,
+        type: confirmed.type,
+        name: confirmed.name,
+        description: confirmed.description,
+        isTeammate: confirmed.isTeammate,
+        isConfirmed: true,
+      }))
+    }
+    const held = next.find(r => r.id === item.id) ?? known
+    const phase = phaseFromList(item.status, held.phase)
+    if (phase === held.phase) continue
     next = patch(next, item.id, r => ({ ...r, phase, phaseAt: at.now, endedAt: isEnded(phase) ? (r.endedAt ?? at.now) : null }))
   }
   return trimAgents(next)
@@ -365,17 +453,17 @@ export function applyList(rows: readonly AgentRow[], listed: readonly ListedAgen
 
 /** A working subagent that sent nothing for SILENT_MS: drawn as "no news". Never main, never one that waits. */
 export function isSilent(r: AgentRow, now: number): boolean {
-  return r.id !== MAIN && r.phase !== 'waiting' && isWorking(r.phase) && now - r.lastEventAt > SILENT_MS
+  return r.id !== MAIN && isConfirmed(r) && r.phase !== 'waiting' && isWorking(r.phase) && now - r.lastEventAt > SILENT_MS
 }
 
-/** Is a timer on screen running? Working rows that are not silent. */
+/** Is a timer on screen running? Confirmed working rows that are not silent. */
 export function needsTick(rows: readonly AgentRow[], now: number): boolean {
-  return rows.some(r => isWorking(r.phase) && !isSilent(r, now))
+  return rows.some(r => isConfirmed(r) && isWorking(r.phase) && !isSilent(r, now))
 }
 
-/** Is the engine's list worth reading? Only while a subagent works. */
+/** Is the engine's list worth reading? Only while a confirmed subagent works. */
 export function needsReconcile(rows: readonly AgentRow[]): boolean {
-  return rows.some(r => r.id !== MAIN && isWorking(r.phase))
+  return rows.some(r => r.id !== MAIN && isConfirmed(r) && isWorking(r.phase))
 }
 
 /** One drawn agent: `lead` goes before its own line, `indent` before its detail lines. */
@@ -390,7 +478,8 @@ export type Tree = { lines: TreeLine[]; hidden: number }
  */
 export function buildTree(rows: readonly AgentRow[], turn: number, now: number): Tree {
   const main = rows.find(r => r.id === MAIN) ?? mainRow(now)
-  const others = rows.filter(r => r.id !== MAIN)
+  // Unconfirmed loops (the engine's own forks, or a spawn not settled yet) are never drawn.
+  const others = rows.filter(r => r.id !== MAIN && isConfirmed(r))
   const byId = new Map(others.map(r => [r.id, r]))
   const parent = new Map<string, string>()
   for (const r of others) {

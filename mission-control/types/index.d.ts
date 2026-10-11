@@ -146,6 +146,13 @@ export type AgentRow = {
   tokens: number
   /** The parent's Agent call id. */
   toolUseId: string | null
+  /**
+   * False while only the loop's own events know it: its first request can stream
+   * before agent.spawn settles, and the engine's own forks never get a spawn. A spawn
+   * or the engine's list confirms it; an unconfirmed row is never drawn. Absent on
+   * rows written by an older module before a reload: counts as confirmed.
+   */
+  isConfirmed?: boolean
 }
 
 declare module 'claude-code' {

@@ -100,12 +100,55 @@ describe('a subagent from spawn to report', () => {
     expect([row(rows, 't1').phase, row(rows, 'a2').phase, row(rows, 'a3').phase]).toEqual(['idle', 'aborted', 'failed'])
   })
 
-  test('a loop no row follows is left alone (the engine’s own forks)', () => {
+  test('a loop no spawn or list names (the engine’s own forks) is never drawn and never keeps the clock running', () => {
     let rows = applySpawn([], facts())
+    rows = applyComplete(rows, { agentId: 'a1', reason: 'answer', answer: 'ok', tokens: 0, now: T0 })
     rows = applyStepStart(rows, { agentId: 'compact-fork', now: T0 })
     rows = applyToolStart(rows, { agentId: 'compact-fork', action: call('c9', T0), now: T0 })
-    rows = applyComplete(rows, { agentId: 'compact-fork', reason: 'answer', answer: 'x', tokens: 5, now: T0 })
-    expect(rows.map(r => r.id)).toEqual([MAIN, 'a1'])
+    expect(buildTree(rows, 1, T0).lines.map(l => l.row.id)).toEqual([MAIN, 'a1'])
+    expect(buildTree(rows, 1, T0).hidden).toBe(0)
+    expect(needsTick(rows, T0)).toBe(false)
+    expect(needsReconcile(rows)).toBe(false)
+    expect(clearEnded(rows).map(r => r.id)).toEqual([MAIN])
+  })
+
+  // Seen live 2026-10-11 (headless e2e): a subagent's first model request starts before
+  // agent.spawn settles, so its first step and its first reason were lost (steps 1 of 2).
+  test('events that come before the spawn settles are kept and joined to the agent', () => {
+    let rows = applyStepStart([], { agentId: 'a1', now: T0 })
+    rows = applyStepEnd(rows, { agentId: 'a1', answer: 'Ищу README. Начну с корня папки.', now: T0 + 5 })
+    rows = applyToolStart(rows, { agentId: 'a1', action: call('c1', T0 + 6), now: T0 + 6 })
+    rows = applySpawn(rows, facts({ now: T0 + 10 }))
+    expect(rows.filter(r => r.id === 'a1').length).toBe(1)
+    expect(row(rows, 'a1')).toMatchObject({
+      isConfirmed: true,
+      type: 'investigator',
+      parentId: MAIN,
+      turn: 1,
+      phase: 'acting',
+      steps: 1,
+      tools: 1,
+      intent: 'Начну с корня папки.',
+      startedAt: T0,
+      task: 'Найди корень бага.',
+    })
+    expect(buildTree(rows, 1, T0 + 10).lines.map(l => l.row.id)).toEqual([MAIN, 'a1'])
+  })
+
+  test('the engine list confirms a loop it names', () => {
+    let rows = applyStepStart([], { agentId: 'x1', now: T0 })
+    rows = applyList(rows, [{ id: 'x1', type: 'Explore', description: 'find callers', status: 'running', isTeammate: false }], { turn: 2, now: T0 + 1 })
+    expect(row(rows, 'x1')).toMatchObject({ isConfirmed: true, type: 'Explore', description: 'find callers', steps: 1, phase: 'thinking', turn: 2 })
+  })
+
+  test('unconfirmed loops are the first to leave when rows overflow', () => {
+    let rows: AgentRow[] = applySpawn([], facts({ agentId: 'keep' }))
+    for (let i = 0; i < MAX_AGENTS + 3; i += 1) rows = applyStepStart(rows, { agentId: `fork${i}`, now: T0 + i })
+    rows = applySpawn(rows, facts({ agentId: 'new', toolUseId: 'tu2' }))
+    expect(rows.length).toBeLessThanOrEqual(MAX_AGENTS)
+    expect(rows.some(r => r.id === 'keep')).toBe(true)
+    expect(rows.some(r => r.id === 'new')).toBe(true)
+    expect(rows.some(r => r.id === 'fork0')).toBe(false)
   })
 
   test('a second spawn under a known id resumes it; a step after its end runs it again', () => {

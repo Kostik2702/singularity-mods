@@ -27,6 +27,15 @@ describe('lastSentence', () => {
     expect(lastSentence('План:\n- прочитать types\n- проверить test')).toBe('проверить test')
   })
 
+  // Seen live 2026-10-11 (headless e2e): an ellipsis inside «…» and (…) split the sentence,
+  // and the reason read "вызови snapshot»), делаю напрямую."
+  test('a sentence end inside brackets or quotes does not split the sentence', () => {
+    const live = 'Класс задачи: ни один не подходит (это прогон инструментов — «запусти субагента… вызови snapshot»), делаю напрямую.'
+    expect(lastSentence(live)).toBe(live)
+    expect(lastSentence('Он ответил «Готово.» Дальше читаю код.')).toBe('Дальше читаю код.')
+    expect(lastSentence('Смотрю (см. ниже) parse.ts. Потом тесты.')).toBe('Потом тесты.')
+  })
+
   test('decimals and paths do not split a sentence', () => {
     expect(lastSentence('Лучший балл 0.68 у reference/A.md. Открываю E:/x/y.ts сейчас')).toBe('Открываю E:/x/y.ts сейчас')
   })

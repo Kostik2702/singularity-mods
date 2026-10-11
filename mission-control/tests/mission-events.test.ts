@@ -37,6 +37,19 @@ test('a subagent’s life reaches the rows through the engine’s events', async
   expect(s.agents.find(r => r.id === MAIN)).toMatchObject({ phase: 'thinking', turn: 1 })
 })
 
+// The order seen live: the subagent's first request streams before agent.spawn settles.
+test('a subagent’s first step, raised before its spawn settles, still counts with its reason', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'go')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  engine.say('Ищу README. Начну с корня папки.')
+  await step($, 'a1')
+  await spawn($, { subagentType: 'Explore', description: 'найти README' })
+  await toolCall($, { tool: 'Glob', pattern: 'README.md' }, 'a1')
+  const a1 = (await snapshot($)).agents.find(r => r.id === 'a1')
+  expect(a1).toMatchObject({ type: 'Explore', isConfirmed: true, steps: 1, tools: 1, intent: 'Начну с корня папки.', phase: 'acting' })
+})
+
 test('main: a turn thinks, a tool makes it act with the reason it gave, the end leaves it waiting', async ($, on) => {
   const engine = engineBeneath(on)
   await submit($, 'go')
