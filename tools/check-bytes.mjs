@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 
-const TEXT = new Set(['.ts', '.tsx', '.mjs', '.js', '.json', '.md', '.sh'])
+const TEXT = new Set(['.ts', '.tsx', '.mjs', '.js', '.json', '.md', '.sh', '.py'])
 
 function* walk(path) {
   if (statSync(path).isFile()) {
