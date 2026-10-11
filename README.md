@@ -56,6 +56,16 @@ CLAUDE_CODE_TYPES=<…/plugin-authoring/types/claude-code.d.ts> tools/verify.sh
 
 After a session has loaded the mod, the engine lays them in `mission-control/.claude-plugin/types/`, which is git-ignored.
 
+The tests draw trees but paint nothing. The live check paints them:
+- `tools/drive-tui.py` runs a real interactive session in a pseudo-terminal (170×50) and saves the screens it paints. Setup and usage are in its header (Windows, `pywinpty` + `pyte` in a venv outside the repo).
+- It found four defects no test could see:
+  - the tab shown by default;
+  - a label squeezed onto the reason's second line;
+  - a reason wrapping to three lines;
+  - a trimmed space.
+
+Run it after any change to the drawing.
+
 Layout:
 
 | Path | What lives there |
