@@ -102,6 +102,15 @@ test('a background launch reads as a launch, not as a finished agent', async ($,
   expect(s.agents.find(r => r.id === MAIN)?.current).toMatchObject({ done: 'запустил агента в фоне' })
 })
 
+// Seen live 2026-10-11 (interactive session in a PTY, 170×50): the tab opened last is the one
+// shown, and Memory hid mission control for the whole run. Agents must be opened last.
+test('the Agents tab is opened last, so it is the tab on screen', async ($, on) => {
+  const engine = engineBeneath(on)
+  await $.session.start({ cwd: 'E:/Project/singularity-mods', surface: 'terminal', isInteractive: true })
+  await engine.clock.advance(0)
+  expect(engine.opened).toEqual(['mem-meter', 'agents'])
+})
+
 // Review #13: a failing registration must not keep the tabs from opening.
 test('the tabs open even when a command fails to register', async ($, on) => {
   const engine = engineBeneath(on, { failCommandRegister: true })

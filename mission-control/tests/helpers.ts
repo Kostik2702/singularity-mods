@@ -44,7 +44,11 @@ export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failComman
   })
   on('agent.list', () => ({ value: listed }))
   on('ui.panes', () => ({ value: [] }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const opened: string[] = []
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
   on('turn.step', async function* (_$, e) {
     const text = texts.shift() ?? ''
     if (text.length > 0) yield { kind: 'text' as const, index: 0, text }
@@ -64,6 +68,8 @@ export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failComman
   }) as never)
   return {
     clock,
+    /** Pane ids in the order $.ui.open was called. */
+    opened,
     say: (text: string): void => {
       texts.push(text)
     },

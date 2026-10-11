@@ -179,10 +179,12 @@ async function reconcile($: $, always: boolean): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // The tabs open first and on their own, so a registration that fails below cannot keep
-    // them shut. Agents first, then Memory: the order the tabs open in. After a reload either
-    // may be up with the old module's drawing, so both are redrawn once (re)opened.
-    void openAgentsPane($)
-      .then(() => openMemoryPane($))
+    // them shut. Memory first, Agents last: the tab opened last is the one on screen (seen
+    // live in a 170-column terminal), and mission control is what the person opens the
+    // sidebar for. After a reload either may be up with the old module's drawing, so both
+    // are redrawn once (re)opened.
+    void openMemoryPane($)
+      .then(() => openAgentsPane($))
       .then(() => $.ui.invalidate('ui.render'))
       .catch(() => undefined)
     await fanOut([
