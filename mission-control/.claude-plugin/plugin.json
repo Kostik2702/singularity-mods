@@ -1,0 +1,6 @@
+{
+  "name": "mem-meter",
+  "version": "0.1.0",
+  "description": "Shows how much context arrives from memory (hook injections, CLAUDE.md, mb search / mb code) plus usage alerts",
+  "types": "./types/index.d.ts"
+}
