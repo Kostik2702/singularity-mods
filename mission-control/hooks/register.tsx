@@ -212,8 +212,10 @@ export const register: Register = on => {
         await reconcile($, true)
       },
     ])
-    // After a reload a pane may be up with the old module's drawing: redraw once it is (re)opened.
-    void openMemoryPane($)
+    // Agents first, then Memory: the order the tabs open in. After a reload either may be up
+    // with the old module's drawing, so both are redrawn once (re)opened.
+    void openAgentsPane($)
+      .then(() => openMemoryPane($))
       .then(() => $.ui.invalidate('ui.render'))
       .catch(() => undefined)
     return next(e)

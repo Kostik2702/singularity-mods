@@ -76,7 +76,7 @@ test('a refused spawn, a nested spawn and the engine list', async ($, on) => {
   s = await snapshot($)
   expect(s.agents.find(r => r.id === 'a1')?.phase).toBe('done')
   expect(s.agents.find(r => r.id === 'x9')).toMatchObject({ type: 'Plan', phase: 'thinking', description: 'план до загрузки мода' })
-  // expect(s.agentsPaneStatus).toBe('placed') // Task 6
+  expect(s.agentsPaneStatus).toBe('placed')
 })
 
 test('a failing tool is recorded as an error and its result passes through unchanged', async ($, on) => {

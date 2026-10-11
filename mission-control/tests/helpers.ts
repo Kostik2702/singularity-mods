@@ -70,6 +70,17 @@ export async function submit($: Engine, text: string): Promise<void> {
   await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
 }
 
+/** The person types `/<command> <args>` at a fullscreen prompt; resolves the command's text. */
+export async function runCommand($: Engine, command: string, args: string): Promise<string> {
+  const answer = await $.command.run({
+    command,
+    args,
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: true, columns: 160 },
+  })
+  return answer.text ?? ''
+}
+
 let seq = 0
 
 export async function spawn(
