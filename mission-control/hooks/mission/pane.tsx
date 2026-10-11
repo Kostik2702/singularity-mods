@@ -70,6 +70,40 @@ export function feedLabelWidth(labels: readonly string[], inner: number): number
   return Math.min(16, Math.max(4, Math.floor(inner / 3)), Math.max(7, ...labels.map(label => [...label].length)))
 }
 
+/**
+ * Greedy word wrap into at most two lines of `width` cells; the second line is cut
+ * with an ellipsis when the text runs on, a word wider than a line is cut. Ink's own
+ * wrap overran a "2 × width" budget live (word breaks waste room), so the reason is
+ * laid out here and each line drawn unwrapped.
+ */
+export function wrapTwo(text: string, width: number): string[] {
+  const w = Math.max(4, width)
+  const words = text.split(/\s+/).filter(word => word.length > 0)
+  const lines: string[] = []
+  let line = ''
+  let next = 0
+  for (; next < words.length; next += 1) {
+    const word = words[next] ?? ''
+    const candidate = line.length === 0 ? word : `${line} ${word}`
+    if ([...candidate].length <= w) {
+      line = candidate
+      continue
+    }
+    if (line.length === 0) {
+      line = clip(word, w)
+      continue
+    }
+    lines.push(line)
+    line = ''
+    if (lines.length === 2) break
+    next -= 1
+  }
+  if (lines.length < 2 && line.length > 0) lines.push(line)
+  const last = lines[1]
+  if (next < words.length && last !== undefined) lines[1] = clip(`${last}…`, w)
+  return lines
+}
+
 /** "сейчас" under 5 s, else 12с / 3м05с / 1ч02м. */
 function ago(ms: number): string {
   return ms < 5000 ? 'сейчас' : fmtDur(ms)
@@ -85,9 +119,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
   const { Box, Text } = table
   const inner = Math.max(20, cols - 2)
   const tree = buildTree(d.agents, d.turn, d.now)
+  // One element per row on screen: `room` for the feed counts them.
   const out: JSX.Element[] = []
-  // Rows on screen beyond one per element (a reason wrapped to its second line).
-  let extraRows = 0
 
   const facts = (row: AgentRow, mark: Mark): string[] => {
     if (row.id === MAIN) {
@@ -119,23 +152,36 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
 
   // The reason is the point of the tab: it wraps under its label, but never past two
   // lines of the column, so a block stays five rows at most and the feed keeps its room.
-  const why = (indent: string, label: string, text: string) => {
-    const line = Math.max(8, inner - indent.length - label.length - 2 - 2)
-    const said = clip(text, line * 2)
-    if ([...said].length > line) extraRows += 1
-    return (
-      <Box flexDirection="row">
+  // Two plain lines, laid out by wrapTwo: no flex box, no Ink wrap (both misbehaved live).
+  const why = (indent: string, label: string, text: string): JSX.Element[] => {
+    const head = `${indent}${label}:${NBSP}«`
+    const lines = wrapTwo(text, Math.max(8, inner - [...head].length - 1))
+    const first = lines[0] ?? ''
+    const second = lines[1]
+    if (second === undefined) {
+      return [
+        <Text wrap="truncate-end">
+          <Text color={COLORS.muted}>
+            {indent}
+            {label}:{NBSP}
+          </Text>
+          <Text color={COLORS.ink}>«{first}»</Text>
+        </Text>,
+      ]
+    }
+    return [
+      <Text wrap="truncate-end">
         <Text color={COLORS.muted}>
           {indent}
           {label}:{NBSP}
         </Text>
-        <Box flexGrow={1} flexShrink={1}>
-          <Text color={COLORS.ink} wrap="wrap">
-            «{said}»
-          </Text>
-        </Box>
-      </Box>
-    )
+        <Text color={COLORS.ink}>«{first}</Text>
+      </Text>,
+      <Text wrap="truncate-end">
+        <Text color={COLORS.muted}>{' '.repeat([...head].length)}</Text>
+        <Text color={COLORS.ink}>{second}»</Text>
+      </Text>,
+    ]
   }
 
   const nowLine = (indent: string, row: AgentRow) => {
@@ -197,7 +243,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
       const task = row.description.length > 0 ? row.description : row.task
       if (task.length > 0) out.push(detail(indent, 'задача', task, COLORS.ink2))
     }
-    if (row.intent !== null) out.push(why(indent, isMain && !isWorking(row.phase) ? 'итог' : 'зачем', row.intent))
+    if (row.intent !== null) out.push(...why(indent, isMain && !isWorking(row.phase) ? 'итог' : 'зачем', row.intent))
     if (isWorking(row.phase)) out.push(nowLine(indent, row))
   }
 
@@ -210,7 +256,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     const row = byId.get(agentId)
     return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
   }
-  const used = out.length + extraRows + (tree.hidden > 0 ? 1 : 0)
+  const used = out.length + (tree.hidden > 0 ? 1 : 0)
   const room = Math.max(FEED_MIN, rows - used - 6)
   const recent = d.actions.slice(-room).reverse()
   const width = feedLabelWidth(

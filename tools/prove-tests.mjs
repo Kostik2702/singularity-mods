@@ -27,7 +27,7 @@ const MUTANTS = [
   { name: 'parallel-call-reads-done', file: 'hooks/mission/model.ts', from: 'current: at.fallback ?? ended', to: 'current: ended' },
   { name: 'fresh-report-folded', file: 'hooks/mission/model.ts', from: 'const isFresh = r.endedAt !== null && now - r.endedAt <= RECENT_MS', to: 'const isFresh = false' },
   { name: 'tokens-count-cache-reads', file: 'hooks/register.tsx', from: "(u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)", to: "(u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)" },
-  { name: 'reason-unbounded', file: 'hooks/mission/pane.tsx', from: 'const said = clip(text, line * 2)', to: 'const said = text' },
+  { name: 'reason-unbounded', file: 'hooks/mission/pane.tsx', from: 'if (lines.length === 2) break', to: 'if (lines.length === 99) break' },
 ]
 
 /** Runs the suite on a folder: its exit status and the pass/fail counts it printed, null when none were printed. */

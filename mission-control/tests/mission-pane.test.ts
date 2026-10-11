@@ -1,6 +1,6 @@
-import { expect, test } from 'claude-code/testing'
+import { describe, expect, test } from 'claude-code/testing'
 
-import { feedLabelWidth } from '../hooks/mission/pane'
+import { feedLabelWidth, wrapTwo } from '../hooks/mission/pane'
 import { complete, engineBeneath, mountAgents, runCommand, spawn, step, submit, toolCall } from './helpers'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -126,20 +126,41 @@ test('six working agents, nested, all visible', async ($, on) => {
   }
 })
 
-// Review #4: the reason wraps under its label, but never past two lines of the column.
+// Review #4, then seen live: Ink's word wrap overran a "2 × width" budget (3 lines). The reason
+// is laid out by wrapTwo into at most two lines, each drawn as its own unwrapped line.
 test('a long reason is cut to two lines of a narrow column', async ($, on) => {
   const engine = engineBeneath(on)
   await spawn($, { subagentType: 'investigator', description: 'корень' })
   engine.say(`Причина: ${'очень длинное объяснение того, что агент делает дальше '.repeat(4)}конец.`)
   await step($, 'a1')
   const ui = await mountAgents($, 'terminal', { cols: 30, rows: 20 })
-  const why = await ui.find({ text: /зачем: «/ })
-  expect(why).toBeDefined()
-  const said = /«(.*)»/.exec(why?.text ?? '')?.[1] ?? ''
-  // 30 columns: inner 28, indent 4, "зачем: " 7, the quotes 2 → 15 a line, 30 for two lines.
-  expect([...said].length).toBeLessThanOrEqual(30)
-  expect(said.endsWith('…')).toBe(true)
+  expect(await ui.find({ text: /зачем: «Причина:/ })).toBeDefined()
+  expect(await ui.find({ text: /…»$/ })).toBeDefined()
   await ui.unmount()
+})
+
+describe('wrapTwo', () => {
+  test('a short text stays on one line', () => {
+    expect(wrapTwo('один два три', 20)).toEqual(['один два три'])
+  })
+
+  test('word wrap into two lines, the second cut with an ellipsis', () => {
+    expect(wrapTwo('aaa bbb ccc ddd eee', 8)).toEqual(['aaa bbb', 'ccc ddd…'])
+    expect(wrapTwo('aaa bbb ccc', 8)).toEqual(['aaa bbb', 'ccc'])
+  })
+
+  test('a word wider than the line is cut, never overflows', () => {
+    expect(wrapTwo('x'.repeat(30), 10)).toEqual([`${'x'.repeat(9)}…`])
+  })
+
+  test('never more than two lines, never a line wider than asked', () => {
+    const text = 'Запускаю субагента Explore, потому что вы прямо попросили делегировать поиск и чтение README.md ему: так его вывод остаётся в стороне'
+    for (const width of [8, 15, 23, 40, 62, 200]) {
+      const lines = wrapTwo(text, width)
+      expect(lines.length).toBeLessThanOrEqual(2)
+      for (const line of lines) expect([...line].length).toBeLessThanOrEqual(width)
+    }
+  })
 })
 
 test('the feed label never takes more than a third of the column', () => {
