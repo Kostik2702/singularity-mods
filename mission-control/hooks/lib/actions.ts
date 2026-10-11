@@ -85,6 +85,20 @@ function shell(input: Record<string, unknown>): ActionText {
   return act('run', 'выполняю', 'выполнил', segs[0] ?? command)
 }
 
+/**
+ * What an Agent or Workflow call really did when it returned at once: it launched work
+ * in the background (async_launched, remote_launched) or started a teammate. Null for
+ * any other result, which keeps the call's own finished verb.
+ */
+export function launchedVerb(result: unknown): string | null {
+  if (typeof result !== 'object' || result === null) return null
+  const status = (result as { status?: unknown }).status
+  if (status === 'async_launched') return 'запустил агента в фоне'
+  if (status === 'remote_launched') return 'запустил в облаке'
+  if (status === 'teammate_spawned') return 'запустил тиммейта'
+  return null
+}
+
 /** A tool call in words, by tool name and its input. */
 export function describeAction(tool: string, input: Record<string, unknown>): ActionText {
   switch (tool) {

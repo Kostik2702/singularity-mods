@@ -92,6 +92,24 @@ test('a refused spawn, a nested spawn and the engine list', async ($, on) => {
   expect(s.agentsPaneStatus).toBe('placed')
 })
 
+// Review #2: an Agent call that launched a background agent returned at once; it finished nothing.
+test('a background launch reads as a launch, not as a finished agent', async ($, on) => {
+  engineBeneath(on)
+  await toolCall($, { tool: 'Agent', subagent_type: 'Explore', description: 'фоновый поиск', prompt: 'p', run_in_background: true })
+  const s = await snapshot($)
+  expect(s.actions.at(-1)).toMatchObject({ status: 'ok', done: 'запустил агента в фоне' })
+  expect(s.agents.find(r => r.id === MAIN)?.current).toMatchObject({ done: 'запустил агента в фоне' })
+})
+
+// Review #13: a failing registration must not keep the tabs from opening.
+test('the tabs open even when a command fails to register', async ($, on) => {
+  const engine = engineBeneath(on, { failCommandRegister: true })
+  await $.session.start({ cwd: 'E:/Project/singularity-mods', surface: 'terminal', isInteractive: true })
+  await engine.clock.advance(0)
+  const s = await snapshot($)
+  expect(s.agentsPaneStatus).toBe('placed')
+})
+
 test('a failing tool is recorded as an error and its result passes through unchanged', async ($, on) => {
   engineBeneath(on)
   const ran = (await $.tool.call({ tool: 'Bash', command: 'false' } as never)) as unknown as { text?: string; isError?: boolean }

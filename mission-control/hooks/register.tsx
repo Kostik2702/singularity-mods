@@ -54,8 +54,9 @@ function sum(list: readonly { tokens: number }[]): number {
 
 /**
  * Runs each part of a shared event in turn. One part's failure does not skip the
- * others; the first failure is thrown once all have run, so the engine still
- * reports the hook as failed instead of it failing silently.
+ * others; the first failure is thrown once all have run, and the hook's `.catch`
+ * then lets the event go on (fail-open): a broken part never holds up the session,
+ * and the failure stays out of the transcript.
  */
 async function fanOut(parts: readonly (() => Promise<void>)[]): Promise<void> {
   const errors: unknown[] = []
@@ -157,7 +158,7 @@ async function tick($: $): Promise<void> {
 /** Squares the rows with $.agent.list(); `always` reads it even when nothing works (a load, a reload). */
 async function reconcile($: $, always: boolean): Promise<void> {
   try {
-    if (!always && !needsReconcile(await read($, agentsA))) return
+    if (!always && !needsReconcile(await read($, agentsA), await $.clock.now())) return
     const listed: ListedAgent[] = (await $.agent.list()).map(a => ({
       id: a.id,
       type: a.type,
@@ -177,6 +178,13 @@ async function reconcile($: $, always: boolean): Promise<void> {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // The tabs open first and on their own, so a registration that fails below cannot keep
+    // them shut. Agents first, then Memory: the order the tabs open in. After a reload either
+    // may be up with the old module's drawing, so both are redrawn once (re)opened.
+    void openAgentsPane($)
+      .then(() => openMemoryPane($))
+      .then(() => $.ui.invalidate('ui.render'))
+      .catch(() => undefined)
     await fanOut([
       async () => {
         await $.tool.register({
@@ -212,12 +220,6 @@ export const register: Register = on => {
         await reconcile($, true)
       },
     ])
-    // Agents first, then Memory: the order the tabs open in. After a reload either may be up
-    // with the old module's drawing, so both are redrawn once (re)opened.
-    void openAgentsPane($)
-      .then(() => openMemoryPane($))
-      .then(() => $.ui.invalidate('ui.render'))
-      .catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
 

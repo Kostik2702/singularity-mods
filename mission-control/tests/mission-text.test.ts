@@ -55,6 +55,13 @@ describe('lastSentence', () => {
   })
 })
 
+// Review #3: reviewer, investigator and critic reports open with a heading; the report line must carry the point.
+test('a report that opens with a heading gives its first real sentence; a closing heading is never the reason', () => {
+  expect(firstSentence('## 1. QUALITY GATES\n- validate exit 0, все 74 теста зелёные.\n## 2. Детали')).toBe('validate exit 0, все 74 теста зелёные.')
+  expect(lastSentence('Читаю парсер.\n\n## Дальше')).toBe('Читаю парсер.')
+  expect(firstSentence('## Только заголовок')).toBe('Только заголовок')
+})
+
 test('firstSentence takes the point a report opens with', () => {
   expect(firstSentence('Корень: регэксп не ловит отрицательные баллы. Детали ниже.\n\n## Детали\n...')).toBe(
     'Корень: регэксп не ловит отрицательные баллы.',

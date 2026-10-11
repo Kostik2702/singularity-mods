@@ -3,7 +3,7 @@ import type { ElementTable } from 'claude-code'
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { fmtTokens } from '../lib/parse'
 import { COLORS, fmtDur, plural, rule } from '../lib/viz'
-import { MAIN, buildTree, isConfirmed, isEnded, isSilent, isWorking } from './model'
+import { MAIN, buildTree, clip, isConfirmed, isEnded, isSilent, isWorking } from './model'
 import type { TreeLine } from './model'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
@@ -56,6 +56,14 @@ function verbColor(kind: Action['kind']): string {
   return COLORS.ink2
 }
 
+/**
+ * Cells for the feed's agent label: as long as the longest label, at least 7, never
+ * more than 16 or a third of the column, so a narrow dock still shows the verb.
+ */
+export function feedLabelWidth(labels: readonly string[], inner: number): number {
+  return Math.min(16, Math.max(4, Math.floor(inner / 3)), Math.max(7, ...labels.map(label => [...label].length)))
+}
+
 /** "сейчас" under 5 s, else 12с / 3м05с / 1ч02м. */
 function ago(ms: number): string {
   return ms < 5000 ? 'сейчас' : fmtDur(ms)
@@ -72,6 +80,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
   const inner = Math.max(20, cols - 2)
   const tree = buildTree(d.agents, d.turn, d.now)
   const out: JSX.Element[] = []
+  // Rows on screen beyond one per element (a reason wrapped to its second line).
+  let extraRows = 0
 
   const facts = (row: AgentRow, mark: Mark): string[] => {
     if (row.id === MAIN) {
@@ -101,20 +111,26 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     </Text>
   )
 
-  // The reason is the point of the tab: it wraps under its label instead of being cut.
-  const why = (indent: string, label: string, text: string) => (
-    <Box flexDirection="row">
-      <Text color={COLORS.muted}>
-        {indent}
-        {label}:{' '}
-      </Text>
-      <Box flexGrow={1} flexShrink={1}>
-        <Text color={COLORS.ink} wrap="wrap">
-          «{text}»
+  // The reason is the point of the tab: it wraps under its label, but never past two
+  // lines of the column, so a block stays five rows at most and the feed keeps its room.
+  const why = (indent: string, label: string, text: string) => {
+    const line = Math.max(8, inner - indent.length - label.length - 2 - 2)
+    const said = clip(text, line * 2)
+    if ([...said].length > line) extraRows += 1
+    return (
+      <Box flexDirection="row">
+        <Text color={COLORS.muted}>
+          {indent}
+          {label}:{' '}
         </Text>
+        <Box flexGrow={1} flexShrink={1}>
+          <Text color={COLORS.ink} wrap="wrap">
+            «{said}»
+          </Text>
+        </Box>
       </Box>
-    </Box>
-  )
+    )
+  }
 
   const nowLine = (indent: string, row: AgentRow) => {
     const cur = row.current
@@ -188,10 +204,13 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     const row = byId.get(agentId)
     return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
   }
-  const used = out.length + (tree.hidden > 0 ? 1 : 0)
+  const used = out.length + extraRows + (tree.hidden > 0 ? 1 : 0)
   const room = Math.max(FEED_MIN, rows - used - 6)
   const recent = d.actions.slice(-room).reverse()
-  const width = Math.min(16, Math.max(7, ...recent.map(a => who(a.agentId).length)))
+  const width = feedLabelWidth(
+    recent.map(a => who(a.agentId)),
+    inner,
+  )
   const feed =
     recent.length === 0 ? (
       <Text color={COLORS.muted}>пока без действий</Text>
@@ -204,7 +223,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
           return (
             <Text wrap="truncate-end">
               <Text color={COLORS.muted}>{ago(d.now - a.startedAt).padStart(6)} </Text>
-              <Text color={a.agentId === null ? COLORS.ink2 : COLORS.muted}>{who(a.agentId).padEnd(width)} </Text>
+              <Text color={a.agentId === null ? COLORS.ink2 : COLORS.muted}>{clip(who(a.agentId), width).padEnd(width)} </Text>
               <Text color={mark.color}>{mark.icon} </Text>
               <Text color={verbColor(a.kind)}>{verb}</Text>
               {a.target.length > 0 ? <Text color={COLORS.ink}> {a.target}</Text> : ''}

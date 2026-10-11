@@ -7,7 +7,7 @@ import { join } from 'node:path'
 
 const MOD = 'mission-control'
 const MUTANTS = [
-  { name: 'intent-takes-first-sentence', file: 'hooks/mission/model.ts', from: 'const last = sentences(text).at(-1)', to: 'const last = sentences(text)[0]' },
+  { name: 'intent-takes-first-sentence', file: 'hooks/mission/model.ts', from: 'const last = saidSentences(text).at(-1)', to: 'const last = saidSentences(text)[0]' },
   { name: 'tree-connectors-swapped', file: 'hooks/mission/model.ts', from: "lead: `${pad}${isLast ? '└─' : '├─'}`", to: "lead: `${pad}${isLast ? '├─' : '└─'}`" },
   { name: 'subagent-never-done', file: 'hooks/mission/model.ts', from: "(isMain || r.isTeammate ? 'idle' : 'done')", to: "(isMain || r.isTeammate ? 'idle' : 'idle')" },
   { name: 'silence-never', file: 'hooks/mission/model.ts', from: 'now - r.lastEventAt > SILENT_MS', to: 'now - r.lastEventAt < 0' },
@@ -15,18 +15,46 @@ const MUTANTS = [
   { name: 'tool-call-loses-its-loop', file: 'hooks/mission/hooks.tsx', from: 'applyToolStart(rows, { agentId, action: current, now: startedAt })', to: 'applyToolStart(rows, { agentId: null, action: current, now: startedAt })' },
   { name: 'step-text-ignored', file: 'hooks/mission/hooks.tsx', from: 'if (answer.length > 0) {', to: 'if (answer.length < 0) {' },
   { name: 'no-view-marker', file: 'hooks/mission/pane.tsx', from: 'const viewed = !isMain && d.viewAgentId === row.id', to: 'const viewed = false' },
-  { name: 'reconcile-never-on-timer', file: 'hooks/register.tsx', from: 'if (!always && !needsReconcile(await read($, agentsA))) return', to: 'if (!always) return' },
+  { name: 'reconcile-never-on-timer', file: 'hooks/register.tsx', from: 'if (!always && !needsReconcile(await read($, agentsA), await $.clock.now())) return', to: 'if (!always) return' },
   { name: 'memory-log-back', file: 'hooks/memory/pane.tsx', from: '{heroBlock}', to: '{heroBlock}<Text>поискал в памяти</Text>' },
   { name: 'early-step-dropped', file: 'hooks/mission/model.ts', from: 'return trimAgents([...rows, provisionalRow(agentId, now)])', to: 'return [...rows]' },
   { name: 'split-inside-brackets', file: 'hooks/mission/model.ts', from: 'if (depth === 0 && isEnd &&', to: 'if (isEnd &&' },
   { name: 'fork-drawn', file: 'hooks/mission/model.ts', from: "rows.filter(r => r.id !== MAIN && isConfirmed(r))", to: 'rows.filter(r => r.id !== MAIN)' },
+  { name: 'background-report-folded', file: 'hooks/mission/model.ts', from: 'const endedThisTurn = r.endedAt !== null && r.endedAt > main.startedAt', to: 'const endedThisTurn = false' },
+  { name: 'launch-reads-finished', file: 'hooks/mission/hooks.tsx', from: 'launchedVerb(ran.result) ?? words.done', to: 'words.done' },
+  { name: 'heading-as-report', file: 'hooks/mission/model.ts', from: 'const said = sentences(prose(text))', to: 'const said = sentences(text)' },
+  { name: 'list-reopens-ended', file: 'hooks/mission/model.ts', from: 'if (isEnded(held)) return held', to: 'if (held === "never") return held' },
+  { name: 'parallel-call-reads-done', file: 'hooks/mission/model.ts', from: 'current: at.fallback ?? ended', to: 'current: ended' },
+  { name: 'reason-unbounded', file: 'hooks/mission/pane.tsx', from: 'const said = clip(text, line * 2)', to: 'const said = text' },
 ]
+
+/** Runs the suite on a folder: its exit status and the pass/fail counts it printed, null when none were printed. */
+function runSuite(dir) {
+  const run = spawnSync('claude', ['plugin', 'test', dir], { encoding: 'utf8', shell: true })
+  const out = `${run.stdout ?? ''}${run.stderr ?? ''}`
+  const pass = /(\d+) pass/.exec(out)?.[1]
+  const fail = /(\d+) fail/.exec(out)?.[1]
+  return { status: run.status, pass: pass === undefined ? null : Number(pass), fail: fail === undefined ? null : Number(fail) }
+}
+
+function copyMod(name) {
+  const dir = join('.tmp', 'prove', name)
+  rmSync(dir, { recursive: true, force: true })
+  cpSync(MOD, dir, { recursive: true, filter: src => !src.replaceAll('\\', '/').includes('.claude-plugin/types') })
+  return dir
+}
+
+// A green baseline first: a red or silent run on the clean copy would make every mutant look caught.
+const base = runSuite(copyMod('baseline'))
+if (base.status !== 0 || base.fail !== 0 || base.pass === null || base.pass === 0) {
+  console.log(`prove-tests: the clean copy is not green (status ${base.status}, pass ${base.pass}, fail ${base.fail}); nothing proven`)
+  process.exit(2)
+}
+console.log(`baseline: ${base.pass} pass, 0 fail`)
 
 let missed = 0
 for (const m of MUTANTS) {
-  const dir = join('.tmp', 'prove', m.name)
-  rmSync(dir, { recursive: true, force: true })
-  cpSync(MOD, dir, { recursive: true, filter: src => !src.replaceAll('\\', '/').includes('.claude-plugin/types') })
+  const dir = copyMod(m.name)
   const path = join(dir, m.file)
   const text = readFileSync(path, 'utf8')
   const count = text.split(m.from).length - 1
@@ -36,14 +64,14 @@ for (const m of MUTANTS) {
     continue
   }
   writeFileSync(path, text.replace(m.from, m.to))
-  const run = spawnSync('claude', ['plugin', 'test', dir], { encoding: 'utf8', shell: true })
-  const failing = /(\d+) fail/.exec(run.stdout ?? '')?.[1] ?? '?'
-  if (run.status === 0) {
-    console.log(`${m.name}: SURVIVED — the suite stayed green on a planted bug`)
-    missed += 1
+  const run = runSuite(dir)
+  // Caught means the suite ran and failed tests; a crash or a missing CLI proves nothing.
+  if (run.status !== 0 && run.fail !== null && run.fail > 0) {
+    console.log(`${m.name}: caught (${run.fail} failing)`)
   } else {
-    console.log(`${m.name}: caught (${failing} failing)`)
+    console.log(`${m.name}: NOT CAUGHT (status ${run.status}, pass ${run.pass}, fail ${run.fail})`)
+    missed += 1
   }
 }
-console.log(missed === 0 ? 'prove-tests: every planted bug was caught' : `prove-tests: ${missed} not caught`)
+console.log(missed === 0 ? `prove-tests: all ${MUTANTS.length} planted bugs were caught` : `prove-tests: ${missed} of ${MUTANTS.length} not caught`)
 process.exit(missed === 0 ? 0 : 1)

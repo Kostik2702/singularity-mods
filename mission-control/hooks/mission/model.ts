@@ -65,15 +65,43 @@ export function sentences(text: string): string[] {
     .filter(part => /[\p{L}\p{N}]/u.test(part))
 }
 
+/**
+ * The text without its layout: headings, table rows, rules and fenced code dropped.
+ * Reports by reviewer, investigator and critic agents open with a heading; what the
+ * agent says is in the lines between them.
+ */
+function prose(text: string): string {
+  const kept: string[] = []
+  let isFence = false
+  for (const line of text.split('\n')) {
+    if (/^[ \t]*```/.test(line)) {
+      isFence = !isFence
+      continue
+    }
+    if (isFence) continue
+    if (/^[ \t]{0,3}#{1,6}[ \t]/.test(line)) continue
+    if (/^[ \t]*\|/.test(line)) continue
+    if (/^[ \t]*([-*_][ \t]*){3,}$/.test(line)) continue
+    kept.push(line)
+  }
+  return kept.join('\n')
+}
+
+/** The sentences of what a text says, falling back to its headings when it says nothing else. */
+function saidSentences(text: string): string[] {
+  const said = sentences(prose(text))
+  return said.length > 0 ? said : sentences(text)
+}
+
 /** What a step's text says last: before a tool call that is what the agent does next, and why. */
 export function lastSentence(text: string): string | null {
-  const last = sentences(text).at(-1)
+  const last = saidSentences(text).at(-1)
   return last === undefined ? null : clip(last, INTENT_MAX)
 }
 
 /** What a text says first: a subagent's report opens with its point. */
 export function firstSentence(text: string): string | null {
-  const first = sentences(text)[0]
+  const first = saidSentences(text)[0]
   return first === undefined ? null : clip(first, INTENT_MAX)
 }
 
@@ -292,7 +320,24 @@ export function applySpawn(rows: readonly AgentRow[], f: SpawnFacts): AgentRow[]
     }))
   }
   if (known !== undefined) {
-    return patch(base, known.id, r => ({ ...r, phase: 'starting', phaseAt: f.now, endedAt: null, lastEventAt: f.now }))
+    // A resume of an ended agent starts it again; one the list found first keeps its phase
+    // and gains what only the spawn knows (its task, model and call).
+    return patch(base, known.id, r => {
+      const isResumed = isEnded(r.phase)
+      return {
+        ...r,
+        phase: isResumed ? 'starting' : r.phase,
+        phaseAt: isResumed ? f.now : r.phaseAt,
+        endedAt: null,
+        lastEventAt: f.now,
+        turn: r.turn === -1 ? f.turn : r.turn,
+        description: r.description.length > 0 ? r.description : clip(f.description.trim(), DESCRIPTION_MAX),
+        task: r.task.length > 0 ? r.task : taskLine(f.prompt),
+        model: r.model ?? f.model,
+        name: r.name ?? f.name,
+        toolUseId: r.toolUseId ?? f.toolUseId,
+      }
+    })
   }
   return trimAgents([...base, newAgent(f, f.agentId)])
 }
@@ -332,16 +377,29 @@ export function applyToolStart(
   }))
 }
 
-/** A tool call ended: its loop's current action takes the outcome, if it is still the current one. */
+/**
+ * A tool call ended: its loop's current action takes the outcome, if it is still the
+ * current one. `done` says what really happened when the finished verb would lie (an
+ * Agent call that only launched a background agent). `fallback` is an older call of
+ * the same loop still running: it becomes current, so parallel calls never read as done.
+ */
 export function applyToolEnd(
   rows: readonly AgentRow[],
-  at: { agentId: string | null; id: string; status: CurrentAction['status']; ms: number; now: number },
+  at: {
+    agentId: string | null
+    id: string
+    status: CurrentAction['status']
+    ms: number
+    now: number
+    done?: string
+    fallback?: CurrentAction
+  },
 ): AgentRow[] {
-  return patch(withLoop(rows, at.agentId, at.now), loopId(at.agentId), r => ({
-    ...r,
-    lastEventAt: at.now,
-    current: r.current !== null && r.current.id === at.id ? { ...r.current, status: at.status, ms: at.ms } : r.current,
-  }))
+  return patch(withLoop(rows, at.agentId, at.now), loopId(at.agentId), r => {
+    if (r.current === null || r.current.id !== at.id) return { ...r, lastEventAt: at.now }
+    const ended: CurrentAction = { ...r.current, status: at.status, ms: at.ms, done: at.done ?? r.current.done }
+    return { ...r, lastEventAt: at.now, current: at.fallback ?? ended }
+  })
 }
 
 /** What turn.complete said about a loop's turn. */
@@ -393,13 +451,18 @@ const FROM_STATUS: Record<string, AgentPhase> = {
   killed: 'aborted',
 }
 
-/** The phase a listed status means, given what we hold: running keeps our finer phase, our own end knows more. */
+/**
+ * The phase a listed status means, given what we hold. Our own end is final: a list
+ * read racing turn.complete must not reopen an ended agent (it would then sit at "no
+ * news" for good); a real resume arrives as the agent's own turn.step. Running keeps
+ * our finer thinking/acting.
+ */
 export function phaseFromList(status: string, held: AgentPhase): AgentPhase {
+  if (isEnded(held)) return held
   if (status === 'running') return held === 'thinking' || held === 'acting' ? held : 'thinking'
   const listed = FROM_STATUS[status]
   if (listed === undefined) return held
   if (listed === 'starting' && isWorking(held)) return held
-  if (isEnded(listed) && isEnded(held)) return held
   return listed
 }
 
@@ -461,9 +524,15 @@ export function needsTick(rows: readonly AgentRow[], now: number): boolean {
   return rows.some(r => isConfirmed(r) && isWorking(r.phase) && !isSilent(r, now))
 }
 
-/** Is the engine's list worth reading? Only while a confirmed subagent works. */
-export function needsReconcile(rows: readonly AgentRow[]): boolean {
-  return rows.some(r => r.id !== MAIN && isConfirmed(r) && isWorking(r.phase))
+/**
+ * Is the engine's list worth reading? While a confirmed subagent works, and while a
+ * loop only its own events know is fresh: the list is how a forked skill (no
+ * agent.spawn) gets confirmed. A quiet unconfirmed loop stops the reads.
+ */
+export function needsReconcile(rows: readonly AgentRow[], now: number): boolean {
+  return rows.some(
+    r => r.id !== MAIN && isWorking(r.phase) && (isConfirmed(r) || now - r.lastEventAt <= SILENT_MS),
+  )
 }
 
 /** One drawn agent: `lead` goes before its own line, `indent` before its detail lines. */
@@ -472,8 +541,8 @@ export type Tree = { lines: TreeLine[]; hidden: number }
 
 /**
  * The rows as a tree under main, in spawn order. Shown: main, every agent not
- * ended, every agent of `turn`, and the ancestors of those; the rest (ended in
- * earlier turns) is counted in `hidden`. An unknown parent or a parent cycle
+ * ended, every agent of `turn` or ended during it, and the ancestors of those; the
+ * rest (ended in earlier turns) is counted in `hidden`. An unknown parent or a parent cycle
  * hangs the row under main, so no row is ever lost.
  */
 export function buildTree(rows: readonly AgentRow[], turn: number, now: number): Tree {
@@ -499,7 +568,10 @@ export function buildTree(rows: readonly AgentRow[], turn: number, now: number):
   }
   const keep = new Set<string>()
   for (const r of others) {
-    if (isEnded(r.phase) && r.turn !== turn) continue
+    // An ended agent stays while it belongs to this turn: spawned in it, or ended during it
+    // (a background agent spawned earlier reports now, and its report line must show).
+    const endedThisTurn = r.endedAt !== null && r.endedAt > main.startedAt
+    if (isEnded(r.phase) && r.turn !== turn && !endedThisTurn) continue
     let cur: string = r.id
     while (cur !== MAIN && !keep.has(cur)) {
       keep.add(cur)

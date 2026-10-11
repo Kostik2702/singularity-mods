@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { On, TurnStepResult } from 'claude-code'
 
 import type { Action, CurrentAction } from '../../types'
-import { describeAction } from '../lib/actions'
+import { describeAction, launchedVerb } from '../lib/actions'
 import { COLORS } from '../lib/viz'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
 import { drawAgentsPane } from './pane'
@@ -75,8 +75,16 @@ export function registerMission(on: On): void {
     const status: Action['status'] = ran.deny !== undefined ? 'denied' : ran.isError === true ? 'error' : 'ok'
     const endedAt = await $.clock.now()
     const ms = endedAt - startedAt
-    await update($, actionsA, list => list.map(a => (a.id === id ? { ...a, status, ms } : a)))
-    await update($, agentsA, rows => applyToolEnd(rows, { agentId, id, status, ms, now: endedAt }))
+    // An Agent or Workflow call that only launched work in the background finished nothing.
+    const done = ran.deny === undefined ? (launchedVerb(ran.result) ?? words.done) : words.done
+    await update($, actionsA, list => list.map(a => (a.id === id ? { ...a, status, ms, done } : a)))
+    // Parallel calls: when this one ends, an older call of the same loop still running becomes current.
+    const running = (await read($, actionsA)).filter(a => a.agentId === agentId && a.status === 'run' && a.id !== id).at(-1)
+    const fallback: CurrentAction | undefined =
+      running === undefined
+        ? undefined
+        : { id: running.id, kind: running.kind, run: running.run, done: running.done, target: running.target, status: 'run', startedAt: running.startedAt, ms: null }
+    await update($, agentsA, rows => applyToolEnd(rows, { agentId, id, status, ms, now: endedAt, done, ...(fallback === undefined ? {} : { fallback }) }))
     return ran
   }).catch(($, e, next) => next(e))
 

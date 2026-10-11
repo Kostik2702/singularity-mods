@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { feedLabelWidth } from '../hooks/mission/pane'
 import { complete, engineBeneath, mountAgents, runCommand, spawn, step, submit, toolCall } from './helpers'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -120,6 +121,28 @@ test('six working agents, nested, all visible', async ($, on) => {
     expect(await ui.find({ text: /Лента/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+// Review #4: the reason wraps under its label, but never past two lines of the column.
+test('a long reason is cut to two lines of a narrow column', async ($, on) => {
+  const engine = engineBeneath(on)
+  await spawn($, { subagentType: 'investigator', description: 'корень' })
+  engine.say(`Причина: ${'очень длинное объяснение того, что агент делает дальше '.repeat(4)}конец.`)
+  await step($, 'a1')
+  const ui = await mountAgents($, 'terminal', { cols: 30, rows: 20 })
+  const why = await ui.find({ text: /зачем: «/ })
+  expect(why).toBeDefined()
+  const said = /«(.*)»/.exec(why?.text ?? '')?.[1] ?? ''
+  // 30 columns: inner 28, indent 4, "зачем: " 7, the quotes 2 → 15 a line, 30 for two lines.
+  expect([...said].length).toBeLessThanOrEqual(30)
+  expect(said.endsWith('…')).toBe(true)
+  await ui.unmount()
+})
+
+test('the feed label never takes more than a third of the column', () => {
+  expect(feedLabelWidth(['↳investigator-with-a-long-name'], 28)).toBe(9)
+  expect(feedLabelWidth(['главный'], 120)).toBe(7)
+  expect(feedLabelWidth(['↳investigator'], 120)).toBe(13)
 })
 
 test('a 30-column dock still draws every agent', async ($, on) => {

@@ -108,7 +108,9 @@ describe('a subagent from spawn to report', () => {
     expect(buildTree(rows, 1, T0).lines.map(l => l.row.id)).toEqual([MAIN, 'a1'])
     expect(buildTree(rows, 1, T0).hidden).toBe(0)
     expect(needsTick(rows, T0)).toBe(false)
-    expect(needsReconcile(rows)).toBe(false)
+    // The list is read while the loop is fresh (a forked skill gets confirmed that way), not once it went quiet.
+    expect(needsReconcile(rows, T0 + 1000)).toBe(true)
+    expect(needsReconcile(rows, T0 + SILENT_MS + 1)).toBe(false)
     expect(clearEnded(rows).map(r => r.id)).toEqual([MAIN])
   })
 
@@ -151,14 +153,17 @@ describe('a subagent from spawn to report', () => {
     expect(rows.some(r => r.id === 'fork0')).toBe(false)
   })
 
-  test('a second spawn under a known id resumes it; a step after its end runs it again', () => {
+  test('a second spawn of an ended agent resumes it; a step after its end runs it again; a working one keeps its phase', () => {
     let rows = applySpawn([], facts())
     rows = applyComplete(rows, { agentId: 'a1', reason: 'answer', answer: 'ok', tokens: 0, now: T0 + 10 })
+    rows = applySpawn(rows, facts({ now: T0 + 15 }))
+    expect(rows.filter(r => r.id === 'a1').length).toBe(1)
+    expect(row(rows, 'a1')).toMatchObject({ phase: 'starting', endedAt: null })
+    rows = applyComplete(rows, { agentId: 'a1', reason: 'answer', answer: 'ok', tokens: 0, now: T0 + 18 })
     rows = applyStepStart(rows, { agentId: 'a1', now: T0 + 20 })
     expect(row(rows, 'a1')).toMatchObject({ phase: 'thinking', endedAt: null })
     rows = applySpawn(rows, facts({ now: T0 + 30 }))
-    expect(rows.filter(r => r.id === 'a1').length).toBe(1)
-    expect(row(rows, 'a1').phase).toBe('starting')
+    expect(row(rows, 'a1').phase).toBe('thinking')
   })
 
   test('a tool end that is not the current call leaves the current one running', () => {
@@ -193,7 +198,10 @@ describe('the engine list', () => {
     expect(phaseFromList('pending', 'thinking')).toBe('thinking')
     expect(phaseFromList('running', 'acting')).toBe('acting')
     expect(phaseFromList('running', 'starting')).toBe('thinking')
-    expect(phaseFromList('running', 'done')).toBe('thinking')
+    // A stale list never reopens an ended agent (review #5): a resume arrives as its own turn.step.
+    expect(phaseFromList('running', 'done')).toBe('done')
+    expect(phaseFromList('idle', 'done')).toBe('done')
+    expect(phaseFromList('waiting', 'failed')).toBe('failed')
     expect(phaseFromList('waiting', 'thinking')).toBe('waiting')
     expect(phaseFromList('idle', 'thinking')).toBe('idle')
     expect(phaseFromList('completed', 'acting')).toBe('done')
@@ -260,6 +268,46 @@ describe('the tree', () => {
   })
 })
 
+describe('review fixes 2026-10-11', () => {
+  // #1: a background agent spawned in turn 1 that ends during turn 2 must show its report line.
+  test('an agent that ends during the current main turn stays on the tree, whatever turn spawned it', () => {
+    let rows = applyTurnStart([], { turn: 1, now: T0 })
+    rows = applySpawn(rows, facts({ agentId: 'bg', isBackground: true }))
+    rows = applySpawn(rows, facts({ agentId: 'old', toolUseId: 'tu2' }))
+    rows = applyComplete(rows, { agentId: 'old', reason: 'answer', answer: 'ok', tokens: 0, now: T0 + 50 })
+    rows = applyTurnStart(rows, { turn: 2, now: T0 + 100 })
+    rows = applyComplete(rows, { agentId: 'bg', reason: 'answer', answer: 'Нашёл 3 места. Детали ниже.', tokens: 0, now: T0 + 200 })
+    const tree = buildTree(rows, 2, T0 + 300)
+    expect(tree.lines.map(l => l.row.id)).toEqual([MAIN, 'bg'])
+    expect(tree.hidden).toBe(1)
+  })
+
+  // #8: Read (slow) and Grep (fast) in parallel; Grep ends first; the row must still show Read running.
+  test('when the current call ends while an older one still runs, the older one becomes current', () => {
+    let rows = applySpawn([], facts())
+    rows = applyToolStart(rows, { agentId: 'a1', action: call('slow', T0), now: T0 })
+    rows = applyToolStart(rows, { agentId: 'a1', action: call('fast', T0 + 1), now: T0 + 1 })
+    rows = applyToolEnd(rows, { agentId: 'a1', id: 'fast', status: 'ok', ms: 5, now: T0 + 6, fallback: call('slow', T0) })
+    expect(row(rows, 'a1').current).toMatchObject({ id: 'slow', status: 'run' })
+    rows = applyToolEnd(rows, { agentId: 'a1', id: 'slow', status: 'ok', ms: 900, now: T0 + 900 })
+    expect(row(rows, 'a1').current).toMatchObject({ id: 'slow', status: 'ok', ms: 900 })
+  })
+
+  // #2: an Agent call that launched a background agent returns at once; it did not finish anything.
+  test('a call end can say what really happened instead of the finished verb', () => {
+    let rows = applyToolStart([], { agentId: null, action: { ...call('ag', T0), kind: 'agent', run: 'работает агент', done: 'агент закончил' }, now: T0 })
+    rows = applyToolEnd(rows, { agentId: null, id: 'ag', status: 'ok', ms: 40, now: T0 + 40, done: 'запустил агента в фоне' })
+    expect(row(rows, MAIN).current).toMatchObject({ done: 'запустил агента в фоне', status: 'ok' })
+  })
+
+  // #10: the list found the agent first (a mid-session load); its spawn then fills what only the spawn knows.
+  test('a spawn after the list found the agent fills its task and keeps its phase', () => {
+    let rows = applyList([], [{ id: 'a1', type: 'investigator', description: '', status: 'running', isTeammate: false }], { turn: 1, now: T0 })
+    rows = applySpawn(rows, facts({ now: T0 + 10 }))
+    expect(row(rows, 'a1')).toMatchObject({ phase: 'thinking', task: 'Найди корень бага.', model: 'claude-test', toolUseId: 'tu1', description: 'корень бага в parse.ts' })
+  })
+})
+
 describe('limits and timers', () => {
   test('past MAX_AGENTS the oldest ended rows leave; main and working ones stay', () => {
     let rows: AgentRow[] = []
@@ -297,12 +345,12 @@ describe('limits and timers', () => {
   test('ticks run only while something works and is not silent; the list is read only for working subagents', () => {
     const idle = applySpawn([], facts({ agentId: null }))
     expect(needsTick(idle, T0)).toBe(false)
-    expect(needsReconcile(idle)).toBe(false)
+    expect(needsReconcile(idle, T0)).toBe(false)
     const thinking = applyTurnStart([], { turn: 1, now: T0 })
     expect(needsTick(thinking, T0)).toBe(true)
-    expect(needsReconcile(thinking)).toBe(false)
+    expect(needsReconcile(thinking, T0)).toBe(false)
     const sub = applySpawn([], facts())
-    expect(needsReconcile(sub)).toBe(true)
+    expect(needsReconcile(sub, T0)).toBe(true)
     expect(needsTick(sub, T0 + SILENT_MS + 1)).toBe(false)
   })
 })

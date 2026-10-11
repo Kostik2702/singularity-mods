@@ -20,12 +20,15 @@ type SpawnAnswer = string | { deny: string }
  * session would. `say` queues the text the next model step streams; `list` sets what
  * $.agent.list() returns; spawns take ids from `spawns` in order.
  */
-export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[] } = {}) {
+export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failCommandRegister?: boolean } = {}) {
   const clock = mock.clock(on, { now: T0 })
   mock.env(on, {})
   // session.start and what it calls: the kit has no bottom for these.
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('command.register', (_$, e) => {
+    if (opts.failCommandRegister === true) throw new Error('command registry unavailable')
+    return { value: { command: e.name } }
+  })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__mission-control__${e.name}` } }))
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.close', () => ({ value: undefined }))
@@ -54,6 +57,11 @@ export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[] } = {}) {
     text: 'x',
   }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'boom', stderr: '', interrupted: false }, text: 'boom', isError: true }))
+  // An Agent call with run_in_background returns at once: the engine's async_launched record.
+  on('tool.call', { tool: 'Agent' }, () => ({
+    result: { status: 'async_launched', agentId: 'bg1', description: 'фоновый поиск', prompt: 'p', outputFile: 'o' },
+    text: 'launched',
+  }) as never)
   return {
     clock,
     say: (text: string): void => {
