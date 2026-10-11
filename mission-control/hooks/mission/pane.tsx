@@ -44,6 +44,12 @@ const STATUS: Record<Action['status'], { icon: string; color: string }> = {
 /** The feed keeps at least this many rows however tall the tree is. */
 const FEED_MIN = 3
 
+/**
+ * After a label beside a wrapping box: the terminal trims a plain space at the end of a
+ * flex child, and the live screen read "зачем:«…" (seen 2026-10-11).
+ */
+const NBSP = String.fromCharCode(0xa0)
+
 /** How the person calls an agent: main is «главный»; a named agent shows its name and type. */
 export function agentName(row: AgentRow): string {
   if (row.id === MAIN) return 'главный'
@@ -121,7 +127,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
       <Box flexDirection="row">
         <Text color={COLORS.muted}>
           {indent}
-          {label}:{' '}
+          {label}:{NBSP}
         </Text>
         <Box flexGrow={1} flexShrink={1}>
           <Text color={COLORS.ink} wrap="wrap">

@@ -127,6 +127,8 @@ export function describeAction(tool: string, input: Record<string, unknown>): Ac
     case 'Agent':
     case 'Task':
       return act('agent', 'работает агент', 'агент закончил', [str(input, 'subagent_type'), str(input, 'description')].filter(Boolean).join(': '))
+    case 'SubagentHandback':
+      return act('agent', 'сдаю отчёт', 'сдал отчёт')
     case 'Skill':
       return act('other', 'загружаю скил', 'загрузил скил', str(input, 'skill'))
     case 'ToolSearch':

@@ -18,7 +18,9 @@ test('a working subagent shows its task, its reason and what it does now, on eve
     expect(await ui.find({ text: /◌ главный · ход 1/ })).toBeDefined()
     expect(await ui.find({ text: /└─● investigator · 0с · 1 шаг/ })).toBeDefined()
     expect(await ui.find({ text: /задача: корень бага в parse\.ts/ })).toBeDefined()
-    expect(await ui.find({ text: /зачем: «Сверяю вывод mb search с регэкспом\.»/ })).toBeDefined()
+    // A no-break space after the label: the terminal trims a plain one at the end of a flex
+    // child, and the live screen read "зачем:«…" (seen 2026-10-11 in a PTY).
+    expect(await ui.find({ text: /зачем: «Сверяю вывод mb search с регэкспом\.»/ })).toBeDefined()
     expect(await ui.find({ text: /✓ нашёл файлы \*\.ts/ })).toBeDefined()
     expect(await ui.find({ text: /↳investigator\s+✓ нашёл файлы \*\.ts/ })).toBeDefined()
     await ui.unmount()
@@ -56,7 +58,7 @@ test('main idle waits for the person and says what it answered', async ($, on) =
   await engine.clock.advance(65_000)
   const ui = await mountAgents($, 'terminal')
   expect(await ui.find({ text: /○ главный · ход 1 · ждёт тебя · 1м05с/ })).toBeDefined()
-  expect(await ui.find({ text: /итог: «Утверждаешь дизайн\?»/ })).toBeDefined()
+  expect(await ui.find({ text: /итог: «Утверждаешь дизайн\?»/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -131,7 +133,7 @@ test('a long reason is cut to two lines of a narrow column', async ($, on) => {
   engine.say(`Причина: ${'очень длинное объяснение того, что агент делает дальше '.repeat(4)}конец.`)
   await step($, 'a1')
   const ui = await mountAgents($, 'terminal', { cols: 30, rows: 20 })
-  const why = await ui.find({ text: /зачем: «/ })
+  const why = await ui.find({ text: /зачем: «/ })
   expect(why).toBeDefined()
   const said = /«(.*)»/.exec(why?.text ?? '')?.[1] ?? ''
   // 30 columns: inner 28, indent 4, "зачем: " 7, the quotes 2 → 15 a line, 30 for two lines.

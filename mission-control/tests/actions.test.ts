@@ -35,6 +35,12 @@ describe('describeAction', () => {
     expect(`${a.done} ${a.target}`).toBe('выполнил Type-check and test the mod')
   })
 
+  // Seen live 2026-10-11: a subagent's hand-back read "вызвал SubagentHandback" in the feed.
+  test('a subagent handing its report back says so', () => {
+    expect(say('SubagentHandback', {})).toBe('сдал отчёт')
+    expect(describeAction('SubagentHandback', {}).kind).toBe('agent')
+  })
+
   test('web, agents, skills, mcp', () => {
     expect(say('WebFetch', { url: 'https://claude.com/blog/claude-code-mods' })).toBe('прочитал страницу claude.com')
     expect(say('Agent', { subagent_type: 'Explore', description: 'find callers' })).toBe('агент закончил Explore: find callers')
