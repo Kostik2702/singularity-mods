@@ -6,7 +6,7 @@ import {
   findMbInvocations,
   matchesHitPath,
   parseSearchOutput,
-} from '../hooks/parse'
+} from '../hooks/lib/parse'
 
 // Real `mb search` rows, as the CLI printed them on 2026-10-02.
 const MIXED = [

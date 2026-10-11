@@ -45,7 +45,7 @@ export type TurnRow = {
   cacheWrite?: number
 }
 
-/** One tool call in plain words, for the activity log. */
+/** One tool call in plain words: the activity feed of every loop. */
 export type Action = {
   id: string
   turn: number
@@ -54,7 +54,8 @@ export type Action = {
   done: string
   target: string
   status: 'run' | 'ok' | 'error' | 'denied'
-  isAgent: boolean
+  /** The loop that made the call: a subagent's id, null on the main loop. */
+  agentId: string | null
   startedAt: number
   ms: number | null
 }
@@ -80,9 +81,76 @@ export type Alerts = {
   error: string | null
 }
 
+/**
+ * Where an agent's loop stands. "No news" is not a phase: it is drawn for a
+ * working row that has sent no event for a while (isSilent).
+ */
+export type AgentPhase =
+  | 'starting'
+  | 'thinking'
+  | 'acting'
+  | 'waiting'
+  | 'idle'
+  | 'done'
+  | 'failed'
+  | 'aborted'
+  | 'denied'
+
+/** A loop's latest tool call; it stays after its end, carrying the outcome. */
+export type CurrentAction = {
+  /** The call's tool_use_id: how its end finds it. */
+  id: string
+  kind: Action['kind']
+  run: string
+  done: string
+  target: string
+  status: Action['status']
+  startedAt: number
+  ms: number | null
+}
+
+/** One model loop of the session: main, or a subagent, teammate or workflow agent. */
+export type AgentRow = {
+  /** 'main', the agent's id, or `denied:<tool_use_id>` for a refused spawn. */
+  id: string
+  /** null for main only; 'main' for an agent the main loop spawned. */
+  parentId: string | null
+  /** The main loop's turn it was spawned in; -1 when unknown and already ended. */
+  turn: number
+  /** subagentType; 'главный' for main. */
+  type: string
+  name: string | null
+  /** The Agent call's few-word description, ≤ 120. */
+  description: string
+  /** The prompt in one plain line, ≤ 240. */
+  task: string
+  model: string | null
+  isBackground: boolean
+  isTeammate: boolean
+  workflowRunId: string | null
+  phase: AgentPhase
+  /** When the current phase began: "думает 12с". */
+  phaseAt: number
+  startedAt: number
+  endedAt: number | null
+  /** The last event of its loop: a working row silent for long is "no news". */
+  lastEventAt: number
+  steps: number
+  tools: number
+  /** The last sentence of its latest step text: what it does next and why, ≤ 160. */
+  intent: string | null
+  current: CurrentAction | null
+  /** The first sentence of its report (or a refusal's reason), ≤ 160. */
+  report: string | null
+  /** Tokens its turns reported, all kinds summed. */
+  tokens: number
+  /** The parent's Agent call id. */
+  toolUseId: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'mem-meter': {
+    'mission-control': {
       hooks: HookInjection[]
       calls: MbCall[]
       reads: string[]
@@ -93,11 +161,14 @@ declare module 'claude-code' {
       alerts: Alerts | null
       isHidden: boolean
       isQuiet: boolean
-      /** The last `$.ui.open` outcome: 'placed', or the engine's reason it did not place the pane. */
+      /** The Memory tab's last `$.ui.open` outcome: 'placed', or why not. */
       paneStatus: string | null
+      /** The Agents tab's last `$.ui.open` outcome. */
+      agentsPaneStatus: string | null
       actions: Action[]
       /** When the last main turn ended ($.clock.now() ms): how long the prompt cache has idled. */
       lastTurnEndAt: number | null
+      agents: AgentRow[]
     }
   }
 }

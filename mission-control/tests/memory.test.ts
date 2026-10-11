@@ -6,7 +6,7 @@ const SEARCH_OUT = [
 ].join('\n')
 
 const BAND = {
-  plugin: 'mem-meter',
+  plugin: 'mission-control',
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,
@@ -21,7 +21,7 @@ const BAND = {
 // A `ui.panes` answer is `{ value }` (OpEventResult); `$.ui.panes()` in the plugin resolves the array inside.
 const NO_PANE = { value: [] }
 const PANE_UP = {
-  value: [{ id: 'mem-meter', title: 'Память → контекст', isShown: true, isFocused: false, isPlaced: true }],
+  value: [{ id: 'mem-meter', title: 'Память', isShown: true, isFocused: false, isPlaced: true }],
 }
 // What the engine draws in the band when no plugin does: an empty Box stands for it.
 const ENGINE_BAND = { type: 'Box' as const, children: [] }
@@ -68,12 +68,12 @@ test('the sidebar pane lists the search, its query and the hit read', async ($, 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
-      plugin: 'mem-meter',
+      plugin: 'mission-control',
       surface,
       component: 'Pane',
       requestId: 'mem-meter',
       props: {
-        title: 'Память → контекст',
+        title: 'Память',
         isFocused: false,
         bodyColumns: 44,
         placement: 'dock',
@@ -109,12 +109,12 @@ test('the pane draws hook injections (a settings hook context reached the model)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
-      plugin: 'mem-meter',
+      plugin: 'mission-control',
       surface,
       component: 'Pane',
       requestId: 'mem-meter',
       props: {
-        title: 'Память → контекст',
+        title: 'Память',
         isFocused: false,
         bodyColumns: 44,
         placement: 'dock',
@@ -146,7 +146,7 @@ test('with the pane up and nothing alarming, the band leaves its slot to the eng
   await ui.unmount()
 })
 
-test('the pane logs actions in words and shows cache use after a turn', async ($, on) => {
+test('the Memory tab shows cache use after a turn and no activity log', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   on('ui.panes', () => NO_PANE)
   on('tool.call', { tool: 'Bash' }, () => ({
@@ -171,12 +171,12 @@ test('the pane logs actions in words and shows cache use after a turn', async ($
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
-      plugin: 'mem-meter',
+      plugin: 'mission-control',
       surface,
       component: 'Pane',
       requestId: 'mem-meter',
       props: {
-        title: 'Память → контекст',
+        title: 'Память',
         isFocused: false,
         bodyColumns: 48,
         placement: 'dock',
@@ -184,8 +184,8 @@ test('the pane logs actions in words and shows cache use after a turn', async ($
         view: {},
       },
     })
-    expect(await ui.find({ text: /поискал в памяти «кэш промпта»/ })).toBeDefined()
-    expect(await ui.find({ text: /прочитал CLAUDE-CODE-CLI-CUSTOMIZATION\.md/ })).toBeDefined()
+    expect(await ui.find({ text: /поискал в памяти/ })).toBeUndefined()
+    expect(await ui.find({ text: /Сейчас · ход|Ход \d/ })).toBeUndefined()
     expect(await ui.find({ text: /из кэша.* 98%/ })).toBeDefined()
     expect(await ui.find({ text: /прочитано\s+9\.8k · записано 198 · без 2/ })).toBeDefined()
     expect(await ui.find({ text: /2м14с · 2 шага · поиск 1 · кэш 98%/ })).toBeDefined()

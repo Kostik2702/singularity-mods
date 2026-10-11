@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { describeAction } from '../hooks/actions'
-import { fmtDur, plural } from '../hooks/viz'
+import { describeAction } from '../hooks/lib/actions'
+import { fmtDur, plural } from '../hooks/lib/viz'
 
 const say = (tool: string, input: Record<string, unknown>) => {
   const a = describeAction(tool, input)

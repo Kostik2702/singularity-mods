@@ -1,6 +1,7 @@
 {
-  "name": "mem-meter",
-  "version": "0.1.0",
-  "description": "Shows how much context arrives from memory (hook injections, CLAUDE.md, mb search / mb code) plus usage alerts",
+  "name": "mission-control",
+  "version": "0.2.0",
+  "description": "Sidebar mission control for Claude Code: what the main agent and every subagent is doing and why, and how much context arrives from memory",
+  "author": { "name": "Kostyantyn Hrytsuk" },
   "types": "./types/index.d.ts"
 }

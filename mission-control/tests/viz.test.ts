@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { allocate, bigText, meter, sparkline } from '../hooks/viz'
+import { allocate, bigText, meter, sparkline } from '../hooks/lib/viz'
 
 describe('allocate', () => {
   test('fills the width exactly, gaps included, largest remainder first', () => {

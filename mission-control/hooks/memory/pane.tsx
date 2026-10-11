@@ -1,13 +1,13 @@
 import type { ElementTable, RenderChildren } from 'claude-code'
 
-import type { Action, Alerts, ClaudeMdFile, HookInjection, MbCall, TurnRow, Usage } from '../types'
-import { fmtTokens } from './parse'
-import { COLORS, allocate, bigText, fmtDur, meter, pct, plural, rule, sparkline } from './viz'
+import type { Alerts, ClaudeMdFile, HookInjection, MbCall, TurnRow, Usage } from '../../types'
+import { fmtTokens } from '../lib/parse'
+import { COLORS, allocate, bigText, fmtDur, meter, pct, plural, rule, sparkline } from '../lib/viz'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
 // and a local `h` turns every element below it into "h is not a function".
 
-export type PaneData = {
+export type MemoryPaneData = {
   hooks: readonly HookInjection[]
   calls: readonly MbCall[]
   reads: readonly string[]
@@ -15,7 +15,6 @@ export type PaneData = {
   turns: readonly TurnRow[]
   usage: Usage | null
   alerts: Alerts | null
-  actions: readonly Action[]
   /** The current turn's index (prompt.submit counts them). */
   turn: number
   lastTurnEndAt: number | null
@@ -25,7 +24,6 @@ export type PaneData = {
 type Source = { name: string; tokens: number; color: string; isPulled: boolean }
 
 const LABEL = 10
-const LOG_ROWS = 8
 
 function total(list: readonly { tokens: number }[]): number {
   return list.reduce((acc, x) => acc + x.tokens, 0)
@@ -42,25 +40,12 @@ function severity(percent: number, warnAt: number, critAt: number): string {
   return COLORS.accent
 }
 
-const STATUS_ICON: Record<Action['status'], { icon: string; color: string }> = {
-  run: { icon: '◌', color: COLORS.accent },
-  ok: { icon: '✓', color: COLORS.good },
-  error: { icon: '✖', color: COLORS.critical },
-  denied: { icon: '⊘', color: COLORS.warning },
-}
-
-function verbColor(kind: Action['kind']): string {
-  if (kind === 'memory') return COLORS.search
-  if (kind === 'delete') return COLORS.serious
-  return COLORS.ink2
-}
-
 /**
- * The sidebar as one tree: a dark surface filling the column, the one figure that
+ * The Memory tab as one tree: a dark surface filling the column, the one figure that
  * answers "how much reached the model from memory", then short sections.
  * `cols` is the pane's body width, `rows` its visible height.
  */
-export function drawPane(table: ElementTable, d: PaneData, cols: number, rows: number) {
+export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: number, rows: number) {
   const { Box, Text } = table
   const inner = Math.max(24, cols - 2)
 
@@ -128,40 +113,6 @@ export function drawPane(table: ElementTable, d: PaneData, cols: number, rows: n
       </Text>
     </Box>
   )
-
-  // ── Activity log: the newest turn that did anything, oldest step at the top ──
-  const logTurn = d.actions.at(-1)?.turn ?? d.turn
-  const turnActs = d.actions.filter(a => a.turn === logTurn)
-  const visible = turnActs.slice(-LOG_ROWS)
-  const earlier = turnActs.length - visible.length
-  const logTitle = isRunning && logTurn === d.turn ? `Сейчас · ход ${logTurn}` : `Ход ${logTurn}`
-  const logBlock =
-    turnActs.length === 0 ? (
-      <Text color={COLORS.muted}>пока без действий</Text>
-    ) : (
-      <Box flexDirection="column">
-        {earlier > 0 && (
-          <Text color={COLORS.muted}>
-            … ещё {earlier} {plural(earlier, ['шаг', 'шага', 'шагов'])} раньше
-          </Text>
-        )}
-        {visible.map(a => {
-          const mark = STATUS_ICON[a.status]
-          const verb = a.status === 'run' ? a.run : a.done
-          const slow = a.status !== 'run' && a.ms !== null && a.ms >= 3000 ? ` ${fmtDur(a.ms)}` : ''
-          const room = Math.max(6, inner - 2 - (a.isAgent ? 2 : 0) - verb.length - 1 - slow.length)
-          return (
-            <Text wrap="truncate-end">
-              <Text color={mark.color}>{mark.icon} </Text>
-              {a.isAgent && <Text color={COLORS.muted}>↳ </Text>}
-              <Text color={verbColor(a.kind)}>{verb}</Text>
-              {a.target.length > 0 && <Text color={a.isAgent ? COLORS.muted : COLORS.ink}> {clip(a.target, room)}</Text>}
-              <Text color={COLORS.muted}>{slow}</Text>
-            </Text>
-          )
-        })}
-      </Box>
-    )
 
   // ── Sources: one stacked bar, then a labelled row per source ──────────
   const cells = allocate(
@@ -382,7 +333,6 @@ export function drawPane(table: ElementTable, d: PaneData, cols: number, rows: n
       minHeight={Math.max(1, rows)}
     >
       {heroBlock}
-      {section(logTitle, logBlock)}
       {section('Откуда', sourcesBlock)}
       {section('Кэш', cacheBlock)}
       {section('Поиск в памяти', searchBlock)}
@@ -391,7 +341,7 @@ export function drawPane(table: ElementTable, d: PaneData, cols: number, rows: n
       {section('Vault', vaultBlock)}
       <Box marginTop={1}>
         <Text color={COLORS.muted} wrap="truncate-end">
-          /mem close · quiet · reset
+          /mem close · quiet · reset · /mc
         </Text>
       </Box>
     </Box>
