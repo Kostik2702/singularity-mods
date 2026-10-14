@@ -17,6 +17,8 @@ export type AgentsPaneData = {
   now: number
   /** The agent whose transcript the person has open beside the pane; null while main is in view. */
   viewAgentId: string | null
+  /** Long actions running now that the Processes tab shows: a pointer to it. Absent counts as none. */
+  jobsRunning?: number
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -256,7 +258,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     const row = byId.get(agentId)
     return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
   }
-  const used = out.length + (tree.hidden > 0 ? 1 : 0)
+  const jobs = d.jobsRunning ?? 0
+  const used = out.length + (tree.hidden > 0 ? 1 : 0) + (jobs > 0 ? 2 : 0)
   const room = Math.max(FEED_MIN, rows - used - 6)
   const recent = d.actions.slice(-room).reverse()
   const width = feedLabelWidth(
@@ -294,6 +297,17 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
         <Text color={COLORS.muted}>
           … ещё {tree.hidden} {plural(tree.hidden, ['завершённый', 'завершённых', 'завершённых'])} раньше
         </Text>
+      )}
+      {jobs > 0 && (
+        <Box marginTop={1}>
+          <Text wrap="truncate-end">
+            <Text color={COLORS.accent}>◷ </Text>
+            <Text color={COLORS.ink2}>
+              {jobs} {plural(jobs, ['долгий процесс идёт', 'долгих процесса идут', 'долгих процессов идут'])}
+            </Text>
+            <Text color={COLORS.muted}> — вкладка «Процессы», /jobs</Text>
+          </Text>
+        </Box>
       )}
       <Box flexDirection="column" marginTop={1}>
         <Text wrap="truncate-end">

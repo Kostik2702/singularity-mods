@@ -28,6 +28,12 @@ const MUTANTS = [
   { name: 'fresh-report-folded', file: 'hooks/mission/model.ts', from: 'const isFresh = r.endedAt !== null && now - r.endedAt <= RECENT_MS', to: 'const isFresh = false' },
   { name: 'tokens-count-cache-reads', file: 'hooks/register.tsx', from: "(u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)", to: "(u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)" },
   { name: 'reason-unbounded', file: 'hooks/mission/pane.tsx', from: 'if (lines.length === 2) break', to: 'if (lines.length === 99) break' },
+  { name: 'job-exit-mark-ignored', file: 'hooks/jobs/model.ts', from: 'if (code !== null && j.isBackground)', to: 'if (code === -12345 && j.isBackground)' },
+  { name: 'job-empty-percent-reads-zero', file: 'hooks/jobs/model.ts', from: "if (s === undefined || s.trim().length === 0) return null", to: "if (s === 'never') return null" },
+  { name: 'job-foreground-shown-at-once', file: 'hooks/jobs/model.ts', from: 'if (!isEnded(j)) return j.isBackground || now - j.startedAt >= LONG_MS', to: 'if (!isEnded(j)) return true' },
+  { name: 'job-tab-never-raised', file: 'hooks/register.tsx', from: 'if (first !== undefined) {', to: 'if (first !== undefined && first.id === "never") {' },
+  { name: 'job-notification-ignored', file: 'hooks/jobs/model.ts', from: "if (word === 'completed')", to: "if (word === 'never')" },
+  { name: 'job-intent-lost', file: 'hooks/jobs/hooks.tsx', from: 'const intent = agents.find(r => r.id === (f.agentId ?? MAIN))?.intent ?? null', to: 'const intent = null' },
 ]
 
 /** Runs the suite on a folder: its exit status and the pass/fail counts it printed, null when none were printed. */

@@ -5,22 +5,95 @@ import { mock } from 'claude-code/testing'
 import type { AgentInfo, On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import type { Action, AgentRow } from '../types'
+import type { Action, AgentRow, Job } from '../types'
 
 export const PLUGIN = 'mission-control'
 const SNAPSHOT_TOOL = 'mcp__mission-control__snapshot'
 export const T0 = 1_000_000
 
-export type Snapshot = { turn: number; agents: AgentRow[]; actions: Action[]; agentsPaneStatus: string | null }
+export type Snapshot = {
+  turn: number
+  agents: AgentRow[]
+  actions: Action[]
+  agentsPaneStatus: string | null
+  jobs: Job[]
+  jobsDir: string | null
+  jobsPaneStatus: string | null
+}
 
 type SpawnAnswer = string | { deny: string }
+
+/** What a Bash call answers beneath the plugin: `{ result, text }`, `{ isError, text }` or `{ deny }`. */
+export type BashAnswer = Record<string, unknown>
+
+export const SESSION_ID = 'sess-1'
+export const TASKS_DIR = `/tmp/claude-501/-proj/${SESSION_ID}/tasks`
+
+/**
+ * A file system in memory beneath the plugin: `$.fs.list`, `stat`, `read`, `exists`
+ * over `files` (path → text), folders implied by the paths. `$.session.id` answers
+ * SESSION_ID, so the tasks folder is found under /tmp as a live session lays it out.
+ */
+export function fakeFs(on: On) {
+  const files = new Map<string, string>()
+  const dirsOf = (): Set<string> => {
+    const dirs = new Set<string>()
+    for (const path of files.keys()) {
+      const parts = path.split('/')
+      for (let i = 1; i < parts.length; i += 1) dirs.add(parts.slice(0, i).join('/') || '/')
+    }
+    return dirs
+  }
+  const missing = (path: string) => Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+  on('session.id', () => ({ value: SESSION_ID }))
+  on('fs.exists', (_$, e) => ({ value: files.has(e.path) || dirsOf().has(e.path) }))
+  on('fs.read', (_$, e) => {
+    const text = files.get(e.path)
+    if (text === undefined) throw missing(e.path)
+    return { value: text }
+  })
+  on('fs.stat', (_$, e) => {
+    const text = files.get(e.path)
+    if (text !== undefined) return { value: { kind: 'file' as const, size: text.length, mtimeMs: 0, isLink: false } }
+    if (dirsOf().has(e.path)) return { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
+    throw missing(e.path)
+  })
+  on('fs.list', (_$, e) => {
+    const dirs = dirsOf()
+    if (!dirs.has(e.path)) throw missing(e.path)
+    const prefix = e.path === '/' ? '/' : `${e.path}/`
+    const names = new Map<string, 'file' | 'dir'>()
+    for (const path of [...files.keys(), ...dirs]) {
+      if (!path.startsWith(prefix) || path === e.path) continue
+      const rest = path.slice(prefix.length)
+      const name = rest.split('/')[0] ?? ''
+      if (name.length === 0) continue
+      names.set(name, rest.includes('/') || dirs.has(path) ? (names.get(name) === 'file' ? 'file' : 'dir') : 'file')
+    }
+    return { value: [...names].map(([name, kind]) => ({ name, kind, size: files.get(`${prefix}${name}`)?.length ?? 0, mtimeMs: 0, isLink: false })) }
+  })
+  return {
+    write: (path: string, text: string): void => {
+      files.set(path, text)
+    },
+    append: (path: string, text: string): void => {
+      files.set(path, (files.get(path) ?? '') + text)
+    },
+    remove: (path: string): void => {
+      files.delete(path)
+    },
+  }
+}
 
 /**
  * Answers, beneath the plugin, every event mission control raises or hooks, as a
  * session would. `say` queues the text the next model step streams; `list` sets what
  * $.agent.list() returns; spawns take ids from `spawns` in order.
  */
-export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failCommandRegister?: boolean } = {}) {
+export function engineBeneath(
+  on: On,
+  opts: { spawns?: SpawnAnswer[]; failCommandRegister?: boolean; bash?: (input: Record<string, unknown>) => BashAnswer | Promise<BashAnswer> } = {},
+) {
   const clock = mock.clock(on, { now: T0 })
   mock.env(on, {})
   // session.start and what it calls: the kit has no bottom for these.
@@ -32,6 +105,7 @@ export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failComman
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__mission-control__${e.name}` } }))
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.close', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
   const spawns: SpawnAnswer[] = [...(opts.spawns ?? ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'])]
   const texts: string[] = []
   let listed: AgentInfo[] = []
@@ -60,7 +134,13 @@ export function engineBeneath(on: On, opts: { spawns?: SpawnAnswer[]; failComman
     result: { type: 'text', file: { filePath: 'x', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } },
     text: 'x',
   }))
-  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'boom', stderr: '', interrupted: false }, text: 'boom', isError: true }))
+  const bash = opts.bash
+  on('tool.call', { tool: 'Bash' }, async (_$, e) =>
+    (bash === undefined
+      ? { result: { stdout: 'boom', stderr: '', interrupted: false }, text: 'boom', isError: true }
+      : await bash(e as unknown as Record<string, unknown>)) as never,
+  )
+  on('tool.call', { tool: 'TaskStop' }, () => ({ result: { message: 'stopped', task_id: 'x', task_type: 'local_bash' }, text: 'stopped' }) as never)
   // An Agent call with run_in_background returns at once: the engine's async_launched record.
   on('tool.call', { tool: 'Agent' }, () => ({
     result: { status: 'async_launched', agentId: 'bg1', description: 'фоновый поиск', prompt: 'p', outputFile: 'o' },
@@ -144,6 +224,23 @@ export async function toolCall($: Engine, args: Record<string, unknown> & { tool
 export async function snapshot($: Engine): Promise<Snapshot> {
   const answer = (await $.tool.call({ tool: SNAPSHOT_TOOL } as never)) as unknown as { result?: unknown }
   return JSON.parse(String(answer.result)) as Snapshot
+}
+
+export async function mountJobs($: Engine, surface: 'terminal' | 'desktop', opts: { cols?: number; rows?: number } = {}) {
+  return $.ui.mount({
+    plugin: PLUGIN,
+    surface,
+    component: 'Pane',
+    requestId: 'jobs',
+    props: {
+      title: 'Процессы',
+      isFocused: false,
+      bodyColumns: opts.cols ?? 72,
+      placement: 'dock',
+      scroll: { offset: 0, bodyRows: opts.rows ?? 60 },
+      view: {},
+    },
+  })
 }
 
 export async function mountAgents(

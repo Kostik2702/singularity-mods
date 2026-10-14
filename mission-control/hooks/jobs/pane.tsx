@@ -1,0 +1,245 @@
+import type { ElementTable } from 'claude-code'
+
+import type { AgentRow, Job } from '../../types'
+import { COLORS, fmtDur, meter, plural, rule } from '../lib/viz'
+import { clip } from '../mission/model'
+import { wrapTwo } from '../mission/pane'
+import { KIND_LABEL, SILENT_OUTPUT_MS, endedShown, runningShown } from './model'
+
+// NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
+// and a local `h` turns every element below it into "h is not a function".
+
+export type JobsPaneData = {
+  jobs: readonly Job[]
+  agents: readonly AgentRow[]
+  now: number
+}
+
+const ENDED_MARK: Record<Exclude<Job['status'], 'run'>, { icon: string; color: string; label: string }> = {
+  ok: { icon: '✓', color: COLORS.good, label: 'готово' },
+  error: { icon: '✖', color: COLORS.critical, label: 'ошибка' },
+  killed: { icon: '⊘', color: COLORS.warning, label: 'остановлено' },
+}
+
+/** Ended jobs folded below the running ones. */
+const ENDED_MAX = 5
+
+/** After a label: the terminal trims a plain space at the end of a flex child (seen live 2026-10-11). */
+const NBSP = String.fromCharCode(0xa0)
+
+/** Who started it: the live agent row when there is one, else what was known at the start. */
+function starter(job: Job, agents: readonly AgentRow[]): string {
+  if (job.agentId === null) return 'главный'
+  const row = agents.find(r => r.id === job.agentId)
+  if (row === undefined) return job.agentLabel
+  return row.name !== null && row.name !== row.type ? `${row.name} (${row.type})` : row.type
+}
+
+/** 12345 → "12 КБ". */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} Б`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} КБ`
+  return `${(n / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+/**
+ * The Processes tab: every long action that runs now (a background shell, a
+ * foreground command past a few seconds, a monitor) with what it is, its gist, who
+ * started it and why, and how far it got; below, the ones that ended lately.
+ */
+export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number, rows: number) {
+  const { Box, Text } = table
+  const inner = Math.max(20, cols - 2)
+  const running = runningShown(d.jobs, d.now)
+  const ended = endedShown(d.jobs, d.now).slice(0, ENDED_MAX)
+  const out: JSX.Element[] = []
+
+  const detail = (label: string, text: string, color: string) => (
+    <Text wrap="truncate-end">
+      <Text color={COLORS.muted}>
+        {'  '}
+        {label}:{NBSP}
+      </Text>
+      <Text color={color}>{text}</Text>
+    </Text>
+  )
+
+  const why = (text: string): JSX.Element[] => {
+    const head = `  зачем:${NBSP}«`
+    const lines = wrapTwo(text, Math.max(8, inner - [...head].length - 1))
+    const first = lines[0] ?? ''
+    const second = lines[1]
+    const lead = (
+      <Text color={COLORS.muted}>
+        {'  '}зачем:{NBSP}
+      </Text>
+    )
+    if (second === undefined) {
+      return [
+        <Text wrap="truncate-end">
+          {lead}
+          <Text color={COLORS.ink}>«{first}»</Text>
+        </Text>,
+      ]
+    }
+    return [
+      <Text wrap="truncate-end">
+        {lead}
+        <Text color={COLORS.ink}>«{first}</Text>
+      </Text>,
+      <Text wrap="truncate-end">
+        <Text color={COLORS.muted}>{' '.repeat([...head].length)}</Text>
+        <Text color={COLORS.ink}>{second}»</Text>
+      </Text>,
+    ]
+  }
+
+  const progress = (job: Job): JSX.Element[] => {
+    const p = job.progress
+    const lines: JSX.Element[] = []
+    if (p !== null && p.fraction !== null) {
+      const percent = `${Math.floor(p.fraction * 100)}%`
+      const width = Math.max(6, inner - 2 - percent.length - 1)
+      const bar = meter(p.fraction, width)
+      lines.push(
+        <Text wrap="truncate-end">
+          <Text color={COLORS.muted}>{'  '}</Text>
+          <Text color={COLORS.accent}>{bar.fill}</Text>
+          <Text color={COLORS.track}>{bar.track}</Text>
+          <Text color={COLORS.ink} bold>
+            {' '}
+            {percent}
+          </Text>
+        </Text>,
+      )
+    }
+    const facts: string[] = []
+    if (p !== null) {
+      if (p.stage !== null) facts.push(p.stage)
+      if (p.count !== null) facts.push(p.count)
+      if (p.eta !== null) facts.push(`осталось ${p.eta}`)
+      if (p.rate !== null) facts.push(p.rate)
+      if (p.metric !== null) facts.push(p.metric)
+    }
+    if (p === null || p.fraction === null) {
+      // No scale in the output: say what is known, so a quiet job never looks frozen by mistake.
+      if (job.outputPath === null) facts.push('вывод пока не виден')
+      else if (job.outputSize > 0) facts.push(`вывод ${fmtBytes(job.outputSize)}`)
+      else facts.push('вывода пока нет')
+    }
+    const silent = job.outputAt !== null && d.now - job.outputAt >= SILENT_OUTPUT_MS
+    lines.push(
+      <Text wrap="truncate-end">
+        <Text color={COLORS.muted}>{'  '}</Text>
+        <Text color={p !== null && p.fraction === null ? COLORS.accent : COLORS.ink2}>{p !== null && p.fraction === null ? '◌ ' : ''}</Text>
+        <Text color={COLORS.ink2}>{facts.join(' · ')}</Text>
+        {silent ? <Text color={COLORS.warning}> · вывод молчит {fmtDur(d.now - (job.outputAt ?? d.now))}</Text> : ''}
+      </Text>,
+    )
+    if (job.lastLine !== null && job.lastLine.length > 0) {
+      lines.push(
+        <Text wrap="truncate-end" color={COLORS.muted}>
+          {'  › '}
+          {job.lastLine}
+        </Text>,
+      )
+    }
+    return lines
+  }
+
+  for (const [i, job] of running.entries()) {
+    const where = job.isBackground ? 'в фоне' : 'на переднем плане'
+    out.push(
+      <Box flexDirection="column" marginTop={i === 0 ? 0 : 1}>
+        <Text wrap="truncate-end">
+          <Text color={COLORS.accent}>● </Text>
+          <Text color={COLORS.ink} bold>
+            {KIND_LABEL[job.kind]}
+          </Text>
+          <Text color={COLORS.muted}>
+            {' · '}
+            {starter(job, d.agents)} · {fmtDur(d.now - job.startedAt)} · {where}
+          </Text>
+        </Text>
+        {job.description.length > 0 ? (
+          <Text wrap="truncate-end" color={COLORS.ink}>
+            {'  '}
+            {job.description}
+          </Text>
+        ) : (
+          ''
+        )}
+        {detail('суть', job.gist, COLORS.ink2)}
+        {job.intent !== null ? why(job.intent) : ''}
+        {progress(job)}
+      </Box>,
+    )
+  }
+
+  if (running.length === 0) {
+    out.push(
+      <Text color={COLORS.muted} wrap="wrap">
+        Долгих процессов нет. Здесь появятся фоновые команды и всё, что идёт дольше 5 с: скачивание, обучение, подготовка данных, сборка — с прогрессом, сутью и тем, кто запустил.
+      </Text>,
+    )
+  }
+
+  const r = rule('Завершены', inner)
+  const endedBlock =
+    ended.length === 0 ? (
+      ''
+    ) : (
+      <Box flexDirection="column" marginTop={1}>
+        <Text wrap="truncate-end">
+          <Text color={COLORS.rule}>{r.lead}</Text>
+          <Text color={COLORS.muted} bold>
+            {r.title}
+          </Text>
+          <Text color={COLORS.rule}>{r.tail}</Text>
+        </Text>
+        {ended.map(job => {
+          const mark = ENDED_MARK[job.status === 'run' ? 'ok' : job.status]
+          const took = fmtDur((job.endedAt ?? d.now) - job.startedAt)
+          const code = job.exitCode !== null && job.exitCode !== 0 ? ` · код ${job.exitCode}` : ''
+          const what = job.description.length > 0 ? job.description : job.gist
+          return (
+            <Text wrap="truncate-end">
+              <Text color={mark.color}>{mark.icon} </Text>
+              <Text color={COLORS.ink2}>{KIND_LABEL[job.kind]}</Text>
+              <Text color={COLORS.muted}>
+                {' · '}
+                {starter(job, d.agents)} · {took}
+                {code} · {clip(what, 80)}
+              </Text>
+            </Text>
+          )
+        })}
+      </Box>
+    )
+
+  const head =
+    running.length === 0
+      ? ''
+      : `${running.length} ${plural(running.length, ['процесс идёт', 'процесса идут', 'процессов идут'])}`
+
+  return (
+    <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+      {head.length > 0 ? (
+        <Box marginBottom={1}>
+          <Text color={COLORS.muted} wrap="truncate-end">
+            {head}
+          </Text>
+        </Box>
+      ) : (
+        ''
+      )}
+      {out}
+      {endedBlock}
+      <Box marginTop={1}>
+        <Text color={COLORS.muted} wrap="truncate-end">
+          /jobs close · clear · /mc
+        </Text>
+      </Box>
+    </Box>
+  )
+}

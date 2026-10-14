@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { On, TurnStepResult } from 'claude-code'
 
 import type { Action, CurrentAction } from '../../types'
+import { runningShown } from '../jobs/model'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { COLORS } from '../lib/viz'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
@@ -22,6 +23,7 @@ const MAX_ACTIONS = 300
 const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const actionsA = atom({ plugin: 'mission-control', key: 'actions' } as const, [])
 const turnA = atom({ plugin: 'mission-control', key: 'turn' } as const, 0)
+const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -115,12 +117,14 @@ export function registerMission(on: On): void {
 
   // The Agents tab: drawn by pane.tsx from the rows and the feed.
   on('ui.render', { component: 'Pane', requestId: AGENTS_PANE }, async ($, e) => {
+    const now = await $.clock.now()
     const data = {
       agents: await read($, agentsA),
       actions: await read($, actionsA),
       turn: await read($, turnA),
-      now: await $.clock.now(),
+      now,
       viewAgentId: e.props.view.agentId ?? null,
+      jobsRunning: runningShown(await read($, jobsA), now).length,
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows)
   }).catch(($, e, next) => {

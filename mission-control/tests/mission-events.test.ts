@@ -108,7 +108,7 @@ test('the Agents tab is opened last, so it is the tab on screen', async ($, on) 
   const engine = engineBeneath(on)
   await $.session.start({ cwd: 'E:/Project/singularity-mods', surface: 'terminal', isInteractive: true })
   await engine.clock.advance(0)
-  expect(engine.opened).toEqual(['mem-meter', 'agents'])
+  expect(engine.opened).toEqual(['mem-meter', 'jobs', 'agents'])
 })
 
 // Review #13: a failing registration must not keep the tabs from opening.

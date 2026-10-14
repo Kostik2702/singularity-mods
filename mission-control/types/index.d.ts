@@ -155,6 +155,69 @@ export type AgentRow = {
   isConfirmed?: boolean
 }
 
+/** What a long action is, by its command: the Processes tab's label and its gist. */
+export type JobKind = 'download' | 'train' | 'data' | 'eval' | 'install' | 'build' | 'test' | 'server' | 'watch' | 'run'
+
+/** What the tail of a job's output says about how far it got; every part optional. */
+export type JobProgress = {
+  /** 0..1 when the output names a total; null for a count without one. */
+  fraction: number | null
+  /** "450/1000", "12.3/45.1 MB". */
+  count: string | null
+  /** Time left as the tool printed it: "00:15", "5s". */
+  eta: string | null
+  /** "3.4MB/s", "12.1it/s". */
+  rate: string | null
+  /** The outer loop when the bar is an inner one: "эпоха 3/10". */
+  stage: string | null
+  /** The latest training figure: "loss 0.213". */
+  metric: string | null
+}
+
+/**
+ * One long action: a background shell, a foreground command that runs for a while,
+ * or a Monitor. Lives in the Processes tab while it runs and a while after.
+ */
+export type Job = {
+  /** The call's tool_use_id: stable from start to end. */
+  id: string
+  /** The engine's background task id, once the command is (or moved) in the background. */
+  taskId: string | null
+  tool: string
+  /** The loop that started it: a subagent's id, null on the main loop. */
+  agentId: string | null
+  /** Who started it as the tab names it at the start ('главный', 'coder'); the live row wins when drawn. */
+  agentLabel: string
+  /** The call's own description, ≤ 160. */
+  description: string
+  /** The command line in one line, ≤ 400. */
+  command: string
+  kind: JobKind
+  /** The gist in Russian from the command: «скачивает model.bin ← huggingface.co». */
+  gist: string
+  /** The starting agent's reason when it made the call: its last sentence before acting. */
+  intent: string | null
+  isBackground: boolean
+  status: 'run' | 'ok' | 'error' | 'killed'
+  exitCode: number | null
+  startedAt: number
+  endedAt: number | null
+  /** The task's live output file; null until it is known. */
+  outputPath: string | null
+  /** Names in the tasks folder when a foreground call started: its own file is the new one. */
+  before: string[] | null
+  outputSize: number
+  /** When the output last grew. */
+  outputAt: number | null
+  progress: JobProgress | null
+  /** The last line the output shows, ANSI and carriage-return rewrites resolved, ≤ 200. */
+  lastLine: string | null
+  /** Monitor's deadline in ms; 0 or null when it has none. */
+  timeoutMs: number | null
+  /** Set once the tab showed it and raised itself for it: a job raises the tab once. */
+  isAnnounced: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'mission-control': {
@@ -176,6 +239,12 @@ declare module 'claude-code' {
       /** When the last main turn ended ($.clock.now() ms): how long the prompt cache has idled. */
       lastTurnEndAt: number | null
       agents: AgentRow[]
+      /** Long actions: background shells, long foreground commands, monitors. */
+      jobs: Job[]
+      /** The session's background-task folder (`…/<session id>/tasks`), once found. */
+      jobsDir: string | null
+      /** The Processes tab's last `$.ui.open` outcome. */
+      jobsPaneStatus: string | null
     }
   }
 }
