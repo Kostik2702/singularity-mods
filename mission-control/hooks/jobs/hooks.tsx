@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 
-import { COLORS } from '../lib/viz'
+import type { Theme } from '../lib/theme'
 import { MAIN } from '../mission/model'
 import {
   agentLabelOf,
@@ -94,7 +94,8 @@ async function settle($: $, id: string, ran: Ran): Promise<void> {
   }
 }
 
-export function registerJobs(on: On): void {
+export function registerJobs(on: On, theme: Theme): void {
+  const c = theme.colors
   // Every shell call may turn long: it is followed from its start, and shown once it is.
   on('tool.call', { tool: SHELLS }, async ($, e, next) => {
     const input = e as unknown as Record<string, unknown>
@@ -169,15 +170,15 @@ export function registerJobs(on: On): void {
       agents: await read($, agentsA),
       now: await $.clock.now(),
     }
-    return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows)
+    return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
-      <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1}>
-        <Text color={COLORS.critical} bold>
-          mission-control: вкладка «Процессы» упала
+      <Box flexDirection="column" backgroundColor={c.surface} paddingX={1}>
+        <Text color={c.critical} bold>
+          mission-control: вкладка «{theme.titles.jobs}» упала
         </Text>
-        <Text color={COLORS.ink2} wrap="wrap">
+        <Text color={c.ink2} wrap="wrap">
           {reason(next.error)}
         </Text>
       </Box>

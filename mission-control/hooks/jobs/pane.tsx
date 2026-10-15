@@ -1,10 +1,12 @@
 import type { ElementTable } from 'claude-code'
 
 import type { AgentRow, Job } from '../../types'
-import { COLORS, fmtDur, meter, plural, rule } from '../lib/viz'
+import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
+import type { Theme } from '../lib/theme'
+import { fmtDur, meter, plural } from '../lib/viz'
 import { clip } from '../mission/model'
 import { wrapTwo } from '../mission/pane'
-import { KIND_LABEL, SILENT_OUTPUT_MS, endedShown, runningShown } from './model'
+import { SILENT_OUTPUT_MS, endedShown, runningShown } from './model'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
 // and a local `h` turns every element below it into "h is not a function".
@@ -15,10 +17,12 @@ export type JobsPaneData = {
   now: number
 }
 
-const ENDED_MARK: Record<Exclude<Job['status'], 'run'>, { icon: string; color: string; label: string }> = {
-  ok: { icon: '✓', color: COLORS.good, label: 'готово' },
-  error: { icon: '✖', color: COLORS.critical, label: 'ошибка' },
-  killed: { icon: '⊘', color: COLORS.warning, label: 'остановлено' },
+function endedMarks(t: Theme): Record<Exclude<Job['status'], 'run'>, { icon: string; color: string; label: string }> {
+  return {
+    ok: { icon: t.icons.ok, color: t.colors.good, label: t.words.jobOk },
+    error: { icon: t.icons.error, color: t.colors.critical, label: t.words.jobError },
+    killed: { icon: t.icons.denied, color: t.colors.warning, label: t.words.jobKilled },
+  }
 }
 
 /** Ended jobs folded below the running ones. */
@@ -28,8 +32,8 @@ const ENDED_MAX = 5
 const NBSP = String.fromCharCode(0xa0)
 
 /** Who started it: the live agent row when there is one, else what was known at the start. */
-function starter(job: Job, agents: readonly AgentRow[]): string {
-  if (job.agentId === null) return 'главный'
+function starter(job: Job, agents: readonly AgentRow[], t: Theme): string {
+  if (job.agentId === null) return t.words.main
   const row = agents.find(r => r.id === job.agentId)
   if (row === undefined) return job.agentLabel
   return row.name !== null && row.name !== row.type ? `${row.name} (${row.type})` : row.type
@@ -47,8 +51,12 @@ function fmtBytes(n: number): string {
  * foreground command past a few seconds, a monitor) with what it is, its gist, who
  * started it and why, and how far it got; below, the ones that ended lately.
  */
-export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number, rows: number) {
+export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number, rows: number, t: Theme = CLASSIC) {
   const { Box, Text } = table
+  const c = t.colors
+  const w = t.words
+  const ENDED_MARK = endedMarks(t)
+  const banner = bannerLine(t, 'jobs', Math.max(20, cols - 2))
   const inner = Math.max(20, cols - 2)
   const running = runningShown(d.jobs, d.now)
   const ended = endedShown(d.jobs, d.now).slice(0, ENDED_MAX)
@@ -56,7 +64,7 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
 
   const detail = (label: string, text: string, color: string) => (
     <Text wrap="truncate-end">
-      <Text color={COLORS.muted}>
+      <Text color={c.muted}>
         {'  '}
         {label}:{NBSP}
       </Text>
@@ -65,31 +73,32 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
   )
 
   const why = (text: string): JSX.Element[] => {
-    const head = `  зачем:${NBSP}«`
+    const head = `  ${w.why}:${NBSP}«`
     const lines = wrapTwo(text, Math.max(8, inner - [...head].length - 1))
     const first = lines[0] ?? ''
     const second = lines[1]
     const lead = (
-      <Text color={COLORS.muted}>
-        {'  '}зачем:{NBSP}
+      <Text color={c.muted}>
+        {'  '}
+        {w.why}:{NBSP}
       </Text>
     )
     if (second === undefined) {
       return [
         <Text wrap="truncate-end">
           {lead}
-          <Text color={COLORS.ink}>«{first}»</Text>
+          <Text color={c.ink}>«{first}»</Text>
         </Text>,
       ]
     }
     return [
       <Text wrap="truncate-end">
         {lead}
-        <Text color={COLORS.ink}>«{first}</Text>
+        <Text color={c.ink}>«{first}</Text>
       </Text>,
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>{' '.repeat([...head].length)}</Text>
-        <Text color={COLORS.ink}>{second}»</Text>
+        <Text color={c.muted}>{' '.repeat([...head].length)}</Text>
+        <Text color={c.ink}>{second}»</Text>
       </Text>,
     ]
   }
@@ -103,10 +112,10 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
       const bar = meter(p.fraction, width)
       lines.push(
         <Text wrap="truncate-end">
-          <Text color={COLORS.muted}>{'  '}</Text>
-          <Text color={COLORS.accent}>{bar.fill}</Text>
-          <Text color={COLORS.track}>{bar.track}</Text>
-          <Text color={COLORS.ink} bold>
+          <Text color={c.muted}>{'  '}</Text>
+          <Text color={c.accent}>{bar.fill}</Text>
+          <Text color={c.track}>{bar.track}</Text>
+          <Text color={c.ink} bold>
             {' '}
             {percent}
           </Text>
@@ -130,15 +139,15 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
     const silent = job.outputAt !== null && d.now - job.outputAt >= SILENT_OUTPUT_MS
     lines.push(
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>{'  '}</Text>
-        <Text color={p !== null && p.fraction === null ? COLORS.accent : COLORS.ink2}>{p !== null && p.fraction === null ? '◌ ' : ''}</Text>
-        <Text color={COLORS.ink2}>{facts.join(' · ')}</Text>
-        {silent ? <Text color={COLORS.warning}> · вывод молчит {fmtDur(d.now - (job.outputAt ?? d.now))}</Text> : ''}
+        <Text color={c.muted}>{'  '}</Text>
+        <Text color={p !== null && p.fraction === null ? c.accent : c.ink2}>{p !== null && p.fraction === null ? `${t.icons.run} ` : ''}</Text>
+        <Text color={c.ink2}>{facts.join(' · ')}</Text>
+        {silent ? <Text color={c.warning}> · вывод молчит {fmtDur(d.now - (job.outputAt ?? d.now))}</Text> : ''}
       </Text>,
     )
     if (job.lastLine !== null && job.lastLine.length > 0) {
       lines.push(
-        <Text wrap="truncate-end" color={COLORS.muted}>
+        <Text wrap="truncate-end" color={c.muted}>
           {'  › '}
           {job.lastLine}
         </Text>,
@@ -152,24 +161,24 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
     out.push(
       <Box flexDirection="column" marginTop={i === 0 ? 0 : 1}>
         <Text wrap="truncate-end">
-          <Text color={COLORS.accent}>● </Text>
-          <Text color={COLORS.ink} bold>
-            {KIND_LABEL[job.kind]}
+          <Text color={c.accent}>{t.icons.job} </Text>
+          <Text color={c.ink} bold>
+            {w.kinds[job.kind]}
           </Text>
-          <Text color={COLORS.muted}>
+          <Text color={c.muted}>
             {' · '}
-            {starter(job, d.agents)} · {fmtDur(d.now - job.startedAt)} · {where}
+            {starter(job, d.agents, t)} · {fmtDur(d.now - job.startedAt)} · {where}
           </Text>
         </Text>
         {job.description.length > 0 ? (
-          <Text wrap="truncate-end" color={COLORS.ink}>
+          <Text wrap="truncate-end" color={c.ink}>
             {'  '}
             {job.description}
           </Text>
         ) : (
           ''
         )}
-        {detail('суть', job.gist, COLORS.ink2)}
+        {detail(w.gist, job.gist, c.ink2)}
         {job.intent !== null ? why(job.intent) : ''}
         {progress(job)}
       </Box>,
@@ -178,24 +187,24 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
 
   if (running.length === 0) {
     out.push(
-      <Text color={COLORS.muted} wrap="wrap">
-        Долгих процессов нет. Здесь появятся фоновые команды и всё, что идёт дольше 5 с: скачивание, обучение, подготовка данных, сборка — с прогрессом, сутью и тем, кто запустил.
+      <Text color={c.muted} wrap="wrap">
+        {w.jobsNone}
       </Text>,
     )
   }
 
-  const r = rule('Завершены', inner)
+  const r = themedRule(t, w.jobsEnded, inner)
   const endedBlock =
     ended.length === 0 ? (
       ''
     ) : (
       <Box flexDirection="column" marginTop={1}>
         <Text wrap="truncate-end">
-          <Text color={COLORS.rule}>{r.lead}</Text>
-          <Text color={COLORS.muted} bold>
+          <Text color={c.rule}>{r.lead}</Text>
+          <Text color={c.muted} bold>
             {r.title}
           </Text>
-          <Text color={COLORS.rule}>{r.tail}</Text>
+          <Text color={c.rule}>{r.tail}</Text>
         </Text>
         {ended.map(job => {
           const mark = ENDED_MARK[job.status === 'run' ? 'ok' : job.status]
@@ -205,10 +214,10 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
           return (
             <Text wrap="truncate-end">
               <Text color={mark.color}>{mark.icon} </Text>
-              <Text color={COLORS.ink2}>{KIND_LABEL[job.kind]}</Text>
-              <Text color={COLORS.muted}>
+              <Text color={c.ink2}>{w.kinds[job.kind]}</Text>
+              <Text color={c.muted}>
                 {' · '}
-                {starter(job, d.agents)} · {took}
+                {starter(job, d.agents, t)} · {took}
                 {code} · {clip(what, 80)}
               </Text>
             </Text>
@@ -220,13 +229,20 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
   const head =
     running.length === 0
       ? ''
-      : `${running.length} ${plural(running.length, ['процесс идёт', 'процесса идут', 'процессов идут'])}`
+      : `${running.length} ${plural(running.length, w.jobsHead)}`
 
   return (
-    <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+    <Box flexDirection="column" backgroundColor={c.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+      {banner !== null && (
+        <Box marginBottom={1}>
+          <Text color={c.accent} bold wrap="truncate-end">
+            {banner}
+          </Text>
+        </Box>
+      )}
       {head.length > 0 ? (
         <Box marginBottom={1}>
-          <Text color={COLORS.muted} wrap="truncate-end">
+          <Text color={c.muted} wrap="truncate-end">
             {head}
           </Text>
         </Box>
@@ -236,7 +252,7 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
       {out}
       {endedBlock}
       <Box marginTop={1}>
-        <Text color={COLORS.muted} wrap="truncate-end">
+        <Text color={c.muted} wrap="truncate-end">
           /jobs close · clear · /mc
         </Text>
       </Box>

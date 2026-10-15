@@ -92,7 +92,13 @@ export function fakeFs(on: On) {
  */
 export function engineBeneath(
   on: On,
-  opts: { spawns?: SpawnAnswer[]; failCommandRegister?: boolean; bash?: (input: Record<string, unknown>) => BashAnswer | Promise<BashAnswer> } = {},
+  opts: {
+    spawns?: SpawnAnswer[]
+    failCommandRegister?: boolean
+    bash?: (input: Record<string, unknown>) => BashAnswer | Promise<BashAnswer>
+    /** Tabs already open when the module (re)loads, by id and title. */
+    panes?: { id: string; title: string }[]
+  } = {},
 ) {
   const clock = mock.clock(on, { now: T0 })
   mock.env(on, {})
@@ -104,7 +110,6 @@ export function engineBeneath(
   })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__mission-control__${e.name}` } }))
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.close', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   const spawns: SpawnAnswer[] = [...(opts.spawns ?? ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'])]
   const texts: string[] = []
@@ -117,11 +122,21 @@ export function engineBeneath(
     return typeof next === 'string' ? { model: 'claude-test', agentId: next } : { deny: next.deny }
   })
   on('agent.list', () => ({ value: listed }))
-  on('ui.panes', () => ({ value: [] }))
+  const panes = [...(opts.panes ?? [])]
+  on('ui.panes', () => ({ value: panes.map(p => ({ ...p, isShown: false, isFocused: false, isPlaced: true })) }))
   const opened: string[] = []
+  const titles: Record<string, string> = {}
+  const closed: string[] = []
   on('ui.open', (_$, e) => {
     opened.push(e.id)
+    titles[e.id] = e.title ?? ''
     return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_$, e) => {
+    closed.push(e.id)
+    const at = panes.findIndex(p => p.id === e.id)
+    if (at >= 0) panes.splice(at, 1)
+    return { value: undefined }
   })
   on('turn.step', async function* (_$, e) {
     const text = texts.shift() ?? ''
@@ -150,6 +165,10 @@ export function engineBeneath(
     clock,
     /** Pane ids in the order $.ui.open was called. */
     opened,
+    /** The title each pane was last opened under. */
+    titles,
+    /** Pane ids in the order $.ui.close was called. */
+    closed,
     say: (text: string): void => {
       texts.push(text)
     },

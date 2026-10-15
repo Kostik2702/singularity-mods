@@ -2,7 +2,9 @@ import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { fmtTokens } from '../lib/parse'
-import { COLORS, fmtDur, plural, rule } from '../lib/viz'
+import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
+import type { Theme } from '../lib/theme'
+import { fmtDur, plural } from '../lib/viz'
 import { MAIN, buildTree, clip, isConfirmed, isEnded, isSilent, isWorking } from './model'
 import type { TreeLine } from './model'
 
@@ -23,24 +25,33 @@ export type AgentsPaneData = {
 
 type Mark = { icon: string; color: string; label: string }
 
-const MARKS: Record<AgentPhase, Mark> = {
-  starting: { icon: '◌', color: COLORS.accent, label: 'запуск' },
-  thinking: { icon: '◌', color: COLORS.accent, label: 'думает' },
-  acting: { icon: '●', color: COLORS.accent, label: 'работает' },
-  waiting: { icon: '◷', color: COLORS.muted, label: 'ждёт' },
-  idle: { icon: '○', color: COLORS.muted, label: 'между ходами' },
-  done: { icon: '✓', color: COLORS.good, label: 'готов' },
-  failed: { icon: '✖', color: COLORS.critical, label: 'ошибка' },
-  aborted: { icon: '⊘', color: COLORS.warning, label: 'прерван' },
-  denied: { icon: '⊘', color: COLORS.warning, label: 'отклонён' },
+/** Each phase's icon, colour and word, in the theme's palette and vocabulary. */
+function marksOf(t: Theme): Record<AgentPhase, Mark> {
+  const c = t.colors
+  const color: Record<AgentPhase, string> = {
+    starting: c.accent,
+    thinking: c.accent,
+    acting: c.accent,
+    waiting: c.muted,
+    idle: c.muted,
+    done: c.good,
+    failed: c.critical,
+    aborted: c.warning,
+    denied: c.warning,
+  }
+  const out = {} as Record<AgentPhase, Mark>
+  for (const phase of Object.keys(color) as AgentPhase[]) out[phase] = { icon: t.icons.phase[phase], color: color[phase], label: t.words.phase[phase] }
+  return out
 }
-const SILENT: Mark = { icon: '?', color: COLORS.warning, label: 'нет вестей' }
 
-const STATUS: Record<Action['status'], { icon: string; color: string }> = {
-  run: { icon: '◌', color: COLORS.accent },
-  ok: { icon: '✓', color: COLORS.good },
-  error: { icon: '✖', color: COLORS.critical },
-  denied: { icon: '⊘', color: COLORS.warning },
+function statusOf(t: Theme): Record<Action['status'], { icon: string; color: string }> {
+  const c = t.colors
+  return {
+    run: { icon: t.icons.run, color: c.accent },
+    ok: { icon: t.icons.ok, color: c.good },
+    error: { icon: t.icons.error, color: c.critical },
+    denied: { icon: t.icons.denied, color: c.warning },
+  }
 }
 
 /** The feed keeps at least this many rows however tall the tree is. */
@@ -52,16 +63,16 @@ const FEED_MIN = 3
  */
 const NBSP = String.fromCharCode(0xa0)
 
-/** How the person calls an agent: main is «главный»; a named agent shows its name and type. */
-export function agentName(row: AgentRow): string {
-  if (row.id === MAIN) return 'главный'
+/** How the person calls an agent: main is «главный» (or the theme's word); a named agent shows its name and type. */
+export function agentName(row: AgentRow, t: Theme = CLASSIC): string {
+  if (row.id === MAIN) return t.words.main
   return row.name !== null && row.name !== row.type ? `${row.name} (${row.type})` : row.type
 }
 
-function verbColor(kind: Action['kind']): string {
-  if (kind === 'memory') return COLORS.search
-  if (kind === 'delete') return COLORS.serious
-  return COLORS.ink2
+function verbColor(kind: Action['kind'], c: Theme['colors']): string {
+  if (kind === 'memory') return c.search
+  if (kind === 'delete') return c.serious
+  return c.ink2
 }
 
 /**
@@ -117,10 +128,16 @@ function ago(ms: number): string {
  * one line with the start of its report. Below, the feed of recent calls of every
  * loop, newest first. `cols` is the body width, `rows` its visible height.
  */
-export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: number, rows: number) {
+export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: number, rows: number, t: Theme = CLASSIC) {
   const { Box, Text } = table
+  const c = t.colors
+  const w = t.words
+  const MARKS = marksOf(t)
+  const STATUS = statusOf(t)
+  const SILENT: Mark = { icon: t.icons.silent, color: c.warning, label: w.silent }
   const inner = Math.max(20, cols - 2)
-  const tree = buildTree(d.agents, d.turn, d.now)
+  const tree = buildTree(d.agents, d.turn, d.now, t.tree)
+  const banner = bannerLine(t, 'agents', inner)
   // One element per row on screen: `room` for the feed counts them.
   const out: JSX.Element[] = []
 
@@ -128,15 +145,15 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     if (row.id === MAIN) {
       const said: string[] = row.turn > 0 ? [`ход ${row.turn}`] : []
       if (isWorking(row.phase)) said.push(fmtDur(d.now - row.startedAt))
-      else if (row.endedAt === null) said.push('ещё не начинал')
-      else if (row.phase === 'idle') said.push(`ждёт тебя · ${ago(d.now - row.endedAt)}`)
+      else if (row.endedAt === null) said.push(w.notStarted)
+      else if (row.phase === 'idle') said.push(`${w.waitsForYou} · ${ago(d.now - row.endedAt)}`)
       else said.push(`${MARKS[row.phase].label} · ${ago(d.now - row.endedAt)}`)
       return said
     }
-    if (row.phase === 'denied') return ['отклонён']
+    if (row.phase === 'denied') return [MARKS.denied.label]
     const said = [fmtDur((row.endedAt ?? d.now) - row.startedAt)]
     if (row.steps > 0) said.push(`${row.steps} ${plural(row.steps, ['шаг', 'шага', 'шагов'])}`)
-    if (mark === SILENT) said.push(`нет вестей ${fmtDur(d.now - row.lastEventAt)}`)
+    if (mark === SILENT) said.push(`${w.silent} ${fmtDur(d.now - row.lastEventAt)}`)
     else if (row.phase === 'failed' || row.phase === 'aborted' || row.phase === 'waiting' || row.phase === 'idle') said.push(mark.label)
     if (isEnded(row.phase) && row.tokens > 0) said.push(`${fmtTokens(row.tokens)} ток.`)
     return said
@@ -144,7 +161,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
 
   const detail = (indent: string, label: string, text: string, color: string) => (
     <Text wrap="truncate-end">
-      <Text color={COLORS.muted}>
+      <Text color={c.muted}>
         {indent}
         {label}:{' '}
       </Text>
@@ -163,25 +180,25 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     if (second === undefined) {
       return [
         <Text wrap="truncate-end">
-          <Text color={COLORS.muted}>
+          <Text color={c.muted}>
             {indent}
             {label}:{NBSP}
           </Text>
-          <Text color={COLORS.ink}>«{first}»</Text>
+          <Text color={c.ink}>«{first}»</Text>
         </Text>,
       ]
     }
     return [
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>
+        <Text color={c.muted}>
           {indent}
           {label}:{NBSP}
         </Text>
-        <Text color={COLORS.ink}>«{first}</Text>
+        <Text color={c.ink}>«{first}</Text>
       </Text>,
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>{' '.repeat([...head].length)}</Text>
-        <Text color={COLORS.ink}>{second}»</Text>
+        <Text color={c.muted}>{' '.repeat([...head].length)}</Text>
+        <Text color={c.ink}>{second}»</Text>
       </Text>,
     ]
   }
@@ -194,21 +211,21 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
       const dur = cur.status === 'run' ? d.now - cur.startedAt : (cur.ms ?? 0)
       return (
         <Text wrap="truncate-end">
-          <Text color={COLORS.muted}>{indent}</Text>
+          <Text color={c.muted}>{indent}</Text>
           <Text color={mark.color}>{mark.icon} </Text>
-          <Text color={verbColor(cur.kind)}>{verb}</Text>
-          {cur.target.length > 0 ? <Text color={COLORS.ink}> {cur.target}</Text> : ''}
-          {dur >= 1000 ? <Text color={COLORS.muted}> {fmtDur(dur)}</Text> : ''}
+          <Text color={verbColor(cur.kind, c)}>{verb}</Text>
+          {cur.target.length > 0 ? <Text color={c.ink}> {cur.target}</Text> : ''}
+          {dur >= 1000 ? <Text color={c.muted}> {fmtDur(dur)}</Text> : ''}
         </Text>
       )
     }
-    const label = row.phase === 'starting' ? 'запускается' : row.phase === 'waiting' ? 'ждёт фоновую работу или одобрение' : 'думает'
+    const label = row.phase === 'starting' ? w.starting : row.phase === 'waiting' ? w.waitingLong : w.thinking
     return (
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>{indent}</Text>
-        <Text color={COLORS.accent}>◌ </Text>
-        <Text color={COLORS.ink2}>{label}</Text>
-        <Text color={COLORS.muted}> {fmtDur(d.now - row.phaseAt)}</Text>
+        <Text color={c.muted}>{indent}</Text>
+        <Text color={c.accent}>{t.icons.run} </Text>
+        <Text color={c.ink2}>{label}</Text>
+        <Text color={c.muted}> {fmtDur(d.now - row.phaseAt)}</Text>
       </Text>
     )
   }
@@ -222,19 +239,19 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     const tail = ended && row.report !== null ? ` — ${row.report}` : ''
     out.push(
       <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>{lead}</Text>
+        <Text color={c.muted}>{lead}</Text>
         {viewed ? (
-          <Text color={COLORS.ink} bold>
-            ▶
+          <Text color={c.ink} bold>
+            {t.icons.viewed}
           </Text>
         ) : (
           ''
         )}
         <Text color={mark.color}>{mark.icon} </Text>
-        <Text color={ended ? COLORS.ink2 : COLORS.ink} bold={!ended}>
-          {agentName(row)}
+        <Text color={ended ? c.ink2 : c.ink} bold={!ended}>
+          {agentName(row, t)}
         </Text>
-        <Text color={COLORS.muted}>
+        <Text color={c.muted}>
           {said.length > 0 ? ` · ${said.join(' · ')}` : ''}
           {tail}
         </Text>
@@ -243,9 +260,9 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     if (ended) return
     if (!isMain) {
       const task = row.description.length > 0 ? row.description : row.task
-      if (task.length > 0) out.push(detail(indent, 'задача', task, COLORS.ink2))
+      if (task.length > 0) out.push(detail(indent, w.task, task, c.ink2))
     }
-    if (row.intent !== null) out.push(...why(indent, isMain && !isWorking(row.phase) ? 'итог' : 'зачем', row.intent))
+    if (row.intent !== null) out.push(...why(indent, isMain && !isWorking(row.phase) ? w.outcome : w.why, row.intent))
     if (isWorking(row.phase)) out.push(nowLine(indent, row))
   }
 
@@ -254,12 +271,12 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
   // ── Feed: the newest calls of every loop, as many as the tab has room for ──
   const byId = new Map(d.agents.map(r => [r.id, r]))
   const who = (agentId: string | null): string => {
-    if (agentId === null) return 'главный'
+    if (agentId === null) return w.main
     const row = byId.get(agentId)
     return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
   }
   const jobs = d.jobsRunning ?? 0
-  const used = out.length + (tree.hidden > 0 ? 1 : 0) + (jobs > 0 ? 2 : 0)
+  const used = out.length + (tree.hidden > 0 ? 1 : 0) + (jobs > 0 ? 2 : 0) + (banner === null ? 0 : 2)
   const room = Math.max(FEED_MIN, rows - used - 6)
   const recent = d.actions.slice(-room).reverse()
   const width = feedLabelWidth(
@@ -268,7 +285,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
   )
   const feed =
     recent.length === 0 ? (
-      <Text color={COLORS.muted}>пока без действий</Text>
+      <Text color={c.muted}>{w.feedEmpty}</Text>
     ) : (
       <Box flexDirection="column">
         {recent.map(a => {
@@ -277,50 +294,57 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
           const slow = a.status !== 'run' && a.ms !== null && a.ms >= 3000 ? ` ${fmtDur(a.ms)}` : ''
           return (
             <Text wrap="truncate-end">
-              <Text color={COLORS.muted}>{ago(d.now - a.startedAt).padStart(6)} </Text>
-              <Text color={a.agentId === null ? COLORS.ink2 : COLORS.muted}>{clip(who(a.agentId), width).padEnd(width)} </Text>
+              <Text color={c.muted}>{ago(d.now - a.startedAt).padStart(6)} </Text>
+              <Text color={a.agentId === null ? c.ink2 : c.muted}>{clip(who(a.agentId), width).padEnd(width)} </Text>
               <Text color={mark.color}>{mark.icon} </Text>
-              <Text color={verbColor(a.kind)}>{verb}</Text>
-              {a.target.length > 0 ? <Text color={COLORS.ink}> {a.target}</Text> : ''}
-              <Text color={COLORS.muted}>{slow}</Text>
+              <Text color={verbColor(a.kind, c)}>{verb}</Text>
+              {a.target.length > 0 ? <Text color={c.ink}> {a.target}</Text> : ''}
+              <Text color={c.muted}>{slow}</Text>
             </Text>
           )
         })}
       </Box>
     )
-  const r = rule('Лента', inner)
+  const r = themedRule(t, w.feed, inner)
 
   return (
-    <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+    <Box flexDirection="column" backgroundColor={c.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+      {banner !== null && (
+        <Box marginBottom={1}>
+          <Text color={c.accent} bold wrap="truncate-end">
+            {banner}
+          </Text>
+        </Box>
+      )}
       {out}
       {tree.hidden > 0 && (
-        <Text color={COLORS.muted}>
+        <Text color={c.muted}>
           … ещё {tree.hidden} {plural(tree.hidden, ['завершённый', 'завершённых', 'завершённых'])} раньше
         </Text>
       )}
       {jobs > 0 && (
         <Box marginTop={1}>
           <Text wrap="truncate-end">
-            <Text color={COLORS.accent}>◷ </Text>
-            <Text color={COLORS.ink2}>
-              {jobs} {plural(jobs, ['долгий процесс идёт', 'долгих процесса идут', 'долгих процессов идут'])}
+            <Text color={c.accent}>{t.icons.jobs} </Text>
+            <Text color={c.ink2}>
+              {jobs} {plural(jobs, w.jobsRunning)}
             </Text>
-            <Text color={COLORS.muted}> — вкладка «Процессы», /jobs</Text>
+            <Text color={c.muted}> — {w.jobsPointer}</Text>
           </Text>
         </Box>
       )}
       <Box flexDirection="column" marginTop={1}>
         <Text wrap="truncate-end">
-          <Text color={COLORS.rule}>{r.lead}</Text>
-          <Text color={COLORS.muted} bold>
+          <Text color={c.rule}>{r.lead}</Text>
+          <Text color={c.muted} bold>
             {r.title}
           </Text>
-          <Text color={COLORS.rule}>{r.tail}</Text>
+          <Text color={c.rule}>{r.tail}</Text>
         </Text>
         {feed}
       </Box>
       <Box marginTop={1}>
-        <Text color={COLORS.muted} wrap="truncate-end">
+        <Text color={c.muted} wrap="truncate-end">
           /mc close · clear · /mem
         </Text>
       </Box>

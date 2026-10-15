@@ -547,7 +547,11 @@ export type Tree = { lines: TreeLine[]; hidden: number }
  * rest (ended in earlier turns) is counted in `hidden`. An unknown parent or a parent cycle
  * hangs the row under main, so no row is ever lost.
  */
-export function buildTree(rows: readonly AgentRow[], turn: number, now: number): Tree {
+/** Tree connectors, two cells each: the theme's, or the plain box-drawing ones. */
+export type TreeGlyphs = { branch: string; last: string; stem: string }
+const PLAIN_TREE: TreeGlyphs = { branch: '├─', last: '└─', stem: '│ ' }
+
+export function buildTree(rows: readonly AgentRow[], turn: number, now: number, glyphs: TreeGlyphs = PLAIN_TREE): Tree {
   const main = rows.find(r => r.id === MAIN) ?? mainRow(now)
   // Unconfirmed loops (the engine's own forks, or a spawn not settled yet) are never drawn.
   const others = rows.filter(r => r.id !== MAIN && isConfirmed(r))
@@ -593,8 +597,8 @@ export function buildTree(rows: readonly AgentRow[], turn: number, now: number):
     const kids = children.get(of) ?? []
     kids.forEach((kid, i) => {
       const isLast = i === kids.length - 1
-      const stem = isLast ? '  ' : '│ '
-      lines.push({ row: kid, depth, lead: `${pad}${isLast ? '└─' : '├─'}`, indent: `${pad}${stem}  ` })
+      const stem = isLast ? '  ' : glyphs.stem
+      lines.push({ row: kid, depth, lead: `${pad}${isLast ? glyphs.last : glyphs.branch}`, indent: `${pad}${stem}  ` })
       walk(kid.id, `${pad}${stem}`, depth + 1)
     })
   }

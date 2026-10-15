@@ -1,7 +1,16 @@
 {
   "name": "mission-control",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Sidebar mission control for Claude Code: what the main agent and every subagent is doing and why, and how much context arrives from memory",
   "author": { "name": "Kostyantyn Hrytsuk" },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "theme": {
+      "type": "string",
+      "title": "Оформление",
+      "description": "Стиль вкладок: classic — обычный; warhammer — Warhammer 40k (золото, пергамент, готика)",
+      "options": ["classic", "warhammer"],
+      "default": "classic"
+    }
+  }
 }

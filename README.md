@@ -41,6 +41,19 @@ A sidebar for Claude Code with three tabs:
 
 Tool for the model: `mcp__mission-control__snapshot`, the whole state as JSON (agents, feed, jobs, memory figures, pane status).
 
+### Theme
+
+The look is an option, `theme`, in the plugin's `userConfig`. Set it in `/config` → mission-control → «Оформление». A change there reloads the mod, and the open tabs reopen under the new titles.
+
+| Value | Look |
+|---|---|
+| `classic` (default) | the dark palette and labels above |
+| `warhammer` | Warhammer 40k:<br>• palette: Imperial gold and parchment on scorched black, blood for failure;<br>• lines: gothic double rules `══ ✠ Хроника ✠ ═══`, a tree drawn with `╠═ ╚═ ║`;<br>• a litany above each tab;<br>• the tabs are «Легион», «Обряды», «Архивы»; main is «Магистр»;<br>• labels: «обет», «во имя», «донесение»; jobs: «Ковка», «Освящение», «Дозор» |
+
+A theme changes only what the mod writes itself: colours, glyphs, rules, headings and labels. What an agent or a command said (task, reason, report, output) is shown as it came. Every theme glyph is one narrow cell with no emoji presentation; `tests/theme.test.ts` holds that.
+
+A new theme is one more entry in `hooks/lib/theme.ts` (a `Theme`: palette, titles, banner, rule, tree, icons, words) and its name in `plugin.json` → `userConfig.theme.options`.
+
 How Процессы sees a job (probed live 2026-10-14; the engine has no list of background shells for a plugin):
 - every Bash call, foreground included, writes its output as it goes to `<tmp>/claude-<uid>/<cwd slug>/<session id>/tasks/<id>.output`. The folder is found once per session by the session id under the temp roots, or learned from the first background launch's result;
 - a background job's file is named in its launch result; a foreground call's is the one new file since it began, attached only when exactly one is new;
@@ -92,7 +105,7 @@ Layout:
 | `hooks/jobs/` | `model.ts` (pure: a command in words, progress from output text, notifications, job rows), `hooks.tsx` (shell, Monitor and TaskStop calls, task notifications, tab render), `pane.tsx` (pure drawing) |
 | `hooks/mission/` | `model.ts` (pure reducers and text helpers), `hooks.tsx` (agent observers, tab render), `pane.tsx` (pure drawing) |
 | `hooks/memory/` | memory observers, the band above the prompt, the Память tab |
-| `hooks/lib/` | pure helpers shared by both: palette and charts, tool calls in words, `mb` output parsing |
+| `hooks/lib/` | pure helpers shared by both: palette and charts, themes (`theme.ts`), tool calls in words, `mb` output parsing |
 | `tests/` | `claude plugin test` suites; `helpers.ts` stands in for the engine beneath the plugin |
 
 Rules the engine enforces, all found by probes (`claude plugin validate` refuses a module that breaks one):

@@ -4,7 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import type { Alerts, HookInjection, MbCall, Usage } from '../../types'
 import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath, parseSearchOutput, shortEvent } from '../lib/parse'
 import type { MbInvocation } from '../lib/parse'
-import { COLORS } from '../lib/viz'
+import type { Theme } from '../lib/theme'
 import { drawMemoryPane } from './pane'
 
 // The memory feature's own observers and drawings. What it shares with mission
@@ -150,7 +150,8 @@ async function memoryData($: $) {
   return { hooks, calls, reads, claudeMd, turns, usage, alerts, searches, hits, best, codeQueries, shown, turn, lastTurnEndAt, now }
 }
 
-export function registerMemory(on: On): void {
+export function registerMemory(on: On, theme: Theme): void {
+  const pal = theme.colors
   on('prompt.submit', async ($, e, next) => {
     await update($, turnA, n => n + 1)
     return next(e)
@@ -231,13 +232,13 @@ export function registerMemory(on: On): void {
       <Box flexDirection="column">
         {!isPane && (
           <Text wrap="truncate-end">
-            <Text dimColor>память ▸ </Text>
+            <Text dimColor>{theme.words.band}</Text>
             <Text>хуки ≈{fmtTokens(sum(s.hooks))}</Text>
             {events.length > 0 && <Text dimColor> ({events})</Text>}
             <Text dimColor> │ </Text>
             <Text>CLAUDE.md {s.claudeMd.length > 0 ? fmtTokens(sum(s.claudeMd)) : '?'}</Text>
             <Text dimColor> │ </Text>
-            <Text color={s.searches.length > 0 ? COLORS.search : COLORS.ink2}>поиск ×{s.searches.length}</Text>
+            <Text color={s.searches.length > 0 ? pal.search : pal.ink2}>поиск ×{s.searches.length}</Text>
             {s.searches.length > 0 && (
               <Text dimColor>
                 {' '}· {s.hits} hits · best {s.best === null ? '—' : s.best.toFixed(2)} · ≈{fmtTokens(sum(s.searches))} · прочит {s.reads.length}/{s.shown}
@@ -245,14 +246,14 @@ export function registerMemory(on: On): void {
             )}
             <Text dimColor> │ </Text>
             <Text>код ×{s.codeQueries}</Text>
-            {last !== undefined && last.searches === 0 && <Text color={COLORS.warning}> │ ⚠ прошлый ход без поиска</Text>}
+            {last !== undefined && last.searches === 0 && <Text color={pal.warning}> │ {theme.icons.warn} прошлый ход без поиска</Text>}
           </Text>
         )}
         {items.length > 0 && (
           <Text wrap="truncate-end">
-            <Text dimColor>⚠ </Text>
+            <Text dimColor>{theme.icons.warn} </Text>
             {items.map((item, i) => (
-              <Text color={item.level === 'soft' ? COLORS.muted : item.level === 'error' ? COLORS.critical : COLORS.warning}>
+              <Text color={item.level === 'soft' ? pal.muted : item.level === 'error' ? pal.critical : pal.warning}>
                 {i > 0 ? ' · ' : ''}
                 {item.text}
               </Text>
@@ -274,15 +275,15 @@ export function registerMemory(on: On): void {
   // The Memory tab: a dark surface filling the column, drawn by pane.tsx from the session's figures.
   on('ui.render', { component: 'Pane', requestId: MEMORY_PANE }, async ($, e) => {
     const s = await memoryData($)
-    return drawMemoryPane($.ui.resolve(e), s, e.props.bodyColumns, e.props.scroll.bodyRows)
+    return drawMemoryPane($.ui.resolve(e), s, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
-      <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1}>
-        <Text color={COLORS.critical} bold>
-          mission-control: вкладка «Память» упала
+      <Box flexDirection="column" backgroundColor={pal.surface} paddingX={1}>
+        <Text color={pal.critical} bold>
+          mission-control: вкладка «{theme.titles.memory}» упала
         </Text>
-        <Text color={COLORS.ink2} wrap="wrap">
+        <Text color={pal.ink2} wrap="wrap">
           {reason(next.error)}
         </Text>
       </Box>

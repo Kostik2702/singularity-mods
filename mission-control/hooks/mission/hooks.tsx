@@ -4,7 +4,7 @@ import type { On, TurnStepResult } from 'claude-code'
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import { describeAction, launchedVerb } from '../lib/actions'
-import { COLORS } from '../lib/viz'
+import type { Theme } from '../lib/theme'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
 import { drawAgentsPane } from './pane'
 
@@ -29,7 +29,8 @@ function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function registerMission(on: On): void {
+export function registerMission(on: On, theme: Theme): void {
+  const c = theme.colors
   on('turn.start', async ($, e, next) => {
     const res = await next(e)
     const turn = await read($, turnA)
@@ -126,15 +127,15 @@ export function registerMission(on: On): void {
       viewAgentId: e.props.view.agentId ?? null,
       jobsRunning: runningShown(await read($, jobsA), now).length,
     }
-    return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows)
+    return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
-      <Box flexDirection="column" backgroundColor={COLORS.surface} paddingX={1}>
-        <Text color={COLORS.critical} bold>
-          mission-control: вкладка «Агенты» упала
+      <Box flexDirection="column" backgroundColor={c.surface} paddingX={1}>
+        <Text color={c.critical} bold>
+          mission-control: вкладка «{theme.titles.agents}» упала
         </Text>
-        <Text color={COLORS.ink2} wrap="wrap">
+        <Text color={c.ink2} wrap="wrap">
           {reason(next.error)}
         </Text>
       </Box>

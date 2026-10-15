@@ -5,7 +5,6 @@ import type { Alerts, ClaudeMdFile, Job, TurnRow } from '../types'
 import { JOBS_PANE, registerJobs } from './jobs/hooks'
 import {
   FULL_READ_MAX,
-  KIND_LABEL,
   TAIL_BYTES,
   applyDeadlines,
   applyOutput,
@@ -18,6 +17,8 @@ import {
 import type { OutputRead } from './jobs/model'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
 import { countDoctor } from './lib/parse'
+import { themeOf } from './lib/theme'
+import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { applyComplete, applyList, clearEnded, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
@@ -29,9 +30,6 @@ import type { ListedAgent } from './mission/model'
 // memory/ and mission/ register their own observers and drawings.
 
 const SNAPSHOT_TOOL = 'mcp__mission-control__snapshot'
-const MEMORY_TITLE = 'Память'
-const AGENTS_TITLE = 'Агенты'
-const JOBS_TITLE = 'Процессы'
 const MAX_TURNS = 50
 /** Running jobs' output files are read once a second, and only while one runs. */
 const JOBS_MS = 1000
@@ -144,13 +142,16 @@ async function refreshAlerts($: $): Promise<void> {
 }
 
 /** Opens the Memory tab unless it is open; records what the engine answered, so a tab that never shows can be explained. */
-async function openMemoryPane($: $): Promise<void> {
+async function openMemoryPane($: $, theme: Theme): Promise<void> {
   try {
-    if ((await $.ui.panes()).some(p => p.id === MEMORY_PANE)) {
+    const mine = (await $.ui.panes()).find(p => p.id === MEMORY_PANE)
+    if (mine !== undefined && mine.title === theme.titles.memory) {
       await update($, paneStatusA, () => 'already open')
       return
     }
-    const opened = await $.ui.open({ id: MEMORY_PANE, title: MEMORY_TITLE })
+    // Open under another title: the theme changed and the module reloaded, so the tab is opened again under the new one.
+    if (mine !== undefined) await $.ui.close({ id: MEMORY_PANE })
+    const opened = await $.ui.open({ id: MEMORY_PANE, title: theme.titles.memory })
     await update($, paneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
   } catch (err) {
     await update($, paneStatusA, () => `open failed: ${reason(err)}`)
@@ -158,13 +159,16 @@ async function openMemoryPane($: $): Promise<void> {
 }
 
 /** Opens the Agents tab unless it is open; records what the engine answered, so a tab that never shows can be explained. */
-async function openAgentsPane($: $): Promise<void> {
+async function openAgentsPane($: $, theme: Theme): Promise<void> {
   try {
-    if ((await $.ui.panes()).some(p => p.id === AGENTS_PANE)) {
+    const mine = (await $.ui.panes()).find(p => p.id === AGENTS_PANE)
+    if (mine !== undefined && mine.title === theme.titles.agents) {
       await update($, agentsPaneStatusA, () => 'already open')
       return
     }
-    const opened = await $.ui.open({ id: AGENTS_PANE, title: AGENTS_TITLE })
+    // Open under another title: the theme changed and the module reloaded, so the tab is opened again under the new one.
+    if (mine !== undefined) await $.ui.close({ id: AGENTS_PANE })
+    const opened = await $.ui.open({ id: AGENTS_PANE, title: theme.titles.agents })
     await update($, agentsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
   } catch (err) {
     await update($, agentsPaneStatusA, () => `open failed: ${reason(err)}`)
@@ -172,13 +176,16 @@ async function openAgentsPane($: $): Promise<void> {
 }
 
 /** Opens the Processes tab unless it is open; records what the engine answered. */
-async function openJobsPane($: $): Promise<void> {
+async function openJobsPane($: $, theme: Theme): Promise<void> {
   try {
-    if ((await $.ui.panes()).some(p => p.id === JOBS_PANE)) {
+    const mine = (await $.ui.panes()).find(p => p.id === JOBS_PANE)
+    if (mine !== undefined && mine.title === theme.titles.jobs) {
       await update($, jobsPaneStatusA, () => 'already open')
       return
     }
-    const opened = await $.ui.open({ id: JOBS_PANE, title: JOBS_TITLE })
+    // Open under another title: the theme changed and the module reloaded, so the tab is opened again under the new one.
+    if (mine !== undefined) await $.ui.close({ id: JOBS_PANE })
+    const opened = await $.ui.open({ id: JOBS_PANE, title: theme.titles.jobs })
     await update($, jobsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
   } catch (err) {
     await update($, jobsPaneStatusA, () => `open failed: ${reason(err)}`)
@@ -190,14 +197,14 @@ async function openJobsPane($: $): Promise<void> {
  * screen without asking. The tab opened last is the one shown, so an open tab behind
  * another is closed and opened again; never while the person holds a pane's keyboard.
  */
-async function raiseJobsPane($: $, job: Job): Promise<void> {
+async function raiseJobsPane($: $, job: Job, theme: Theme): Promise<void> {
   try {
-    $.ui.toast(`Процессы: ${KIND_LABEL[job.kind]} — ${job.description.length > 0 ? job.description : job.gist}`)
+    $.ui.toast(`${theme.titles.jobs}: ${theme.words.kinds[job.kind]} — ${job.description.length > 0 ? job.description : job.gist}`)
     const panes = await $.ui.panes()
     const mine = panes.find(p => p.id === JOBS_PANE)
     if (mine !== undefined && (mine.isShown || panes.some(p => p.isFocused))) return
     if (mine !== undefined) await $.ui.close({ id: JOBS_PANE })
-    const opened = await $.ui.open({ id: JOBS_PANE, title: JOBS_TITLE })
+    const opened = await $.ui.open({ id: JOBS_PANE, title: theme.titles.jobs })
     await update($, jobsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
   } catch (err) {
     await update($, jobsPaneStatusA, () => `raise failed: ${reason(err)}`)
@@ -265,7 +272,7 @@ async function readTail($: $, path: string, size: number): Promise<string | null
  * running job's output when it grew (progress, last line, a background exit), ends a
  * monitor past its deadline, and raises the tab for a job that just became long.
  */
-async function pollJobs($: $): Promise<void> {
+async function pollJobs($: $, theme: Theme): Promise<void> {
   try {
     const jobs = await read($, jobsA)
     if (!needsPoll(jobs)) return
@@ -304,7 +311,7 @@ async function pollJobs($: $): Promise<void> {
     const first = fresh[0]
     if (first !== undefined) {
       await update($, jobsA, list => markAnnounced(list, fresh.map(j => j.id)))
-      await raiseJobsPane($, first)
+      await raiseJobsPane($, first, theme)
     }
     // Elapsed times on the tab move every second even when no output did.
     $.ui.invalidate('ui.render')
@@ -343,16 +350,20 @@ async function reconcile($: $, always: boolean): Promise<void> {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // The look comes from the `theme` option (/config → mission-control); a change there
+  // reloads the module, so it is read once here and handed to every drawing.
+  const theme = themeOf((options as Record<string, unknown> | undefined)?.theme)
+
   on('session.start', async ($, e, next) => {
     // The tabs open first and on their own, so a registration that fails below cannot keep
     // them shut. Memory first, Agents last: the tab opened last is the one on screen (seen
     // live in a 170-column terminal), and mission control is what the person opens the
     // sidebar for; Processes comes forward by itself when a long action begins. After a
     // reload any may be up with the old module's drawing, so all are redrawn once (re)opened.
-    void openMemoryPane($)
-      .then(() => openJobsPane($))
-      .then(() => openAgentsPane($))
+    void openMemoryPane($, theme)
+      .then(() => openJobsPane($, theme))
+      .then(() => openAgentsPane($, theme))
       .then(() => $.ui.invalidate('ui.render'))
       .catch(() => undefined)
     await fanOut([
@@ -397,7 +408,7 @@ export const register: Register = on => {
         })
       },
       async () => {
-        $.clock.every(JOBS_MS, () => void pollJobs($))
+        $.clock.every(JOBS_MS, () => void pollJobs($, theme))
         // Found now, so a foreground call's file can be told apart from the first call on.
         if ((await read($, jobsDirA)) === null) {
           jobsDirTriedAt = await $.clock.now()
@@ -464,7 +475,7 @@ export const register: Register = on => {
       return { text: 'mission-control: завершённые агенты и лента прошлых ходов убраны.' }
     }
     if (arg.length > 0) return { text: `mission-control: не знаю «${arg}». /mc — открыть вкладку, /mc close, /mc clear.` }
-    const opened = await $.ui.open({ id: AGENTS_PANE, title: AGENTS_TITLE })
+    const opened = await $.ui.open({ id: AGENTS_PANE, title: theme.titles.agents })
     await update($, agentsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
     return { text: opened.isPlaced ? 'mission-control: вкладка «Агенты» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
   }).catch(($, e, next) => ({ text: `mission-control: /mc упала: ${reason(next.error)}` }))
@@ -480,7 +491,7 @@ export const register: Register = on => {
       return { text: 'mission-control: завершённые процессы убраны.' }
     }
     if (arg.length > 0) return { text: `mission-control: не знаю «${arg}». /jobs — открыть вкладку, /jobs close, /jobs clear.` }
-    const opened = await $.ui.open({ id: JOBS_PANE, title: JOBS_TITLE })
+    const opened = await $.ui.open({ id: JOBS_PANE, title: theme.titles.jobs })
     await update($, jobsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
     return { text: opened.isPlaced ? 'mission-control: вкладка «Процессы» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
   }).catch(($, e, next) => ({ text: `mission-control: /jobs упала: ${reason(next.error)}` }))
@@ -512,7 +523,7 @@ export const register: Register = on => {
     }
     await refreshAlerts($)
     await refreshClaudeMd($)
-    const opened = await $.ui.open({ id: MEMORY_PANE, title: MEMORY_TITLE })
+    const opened = await $.ui.open({ id: MEMORY_PANE, title: theme.titles.memory })
     await update($, paneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
     return { text: opened.isPlaced ? 'mission-control: вкладка «Память» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
   }).catch(($, e, next) => ({ text: `mission-control: /mem упала: ${reason(next.error)}` }))
@@ -546,7 +557,7 @@ export const register: Register = on => {
     return { result: JSON.stringify(state, null, 1) }
   })
 
-  registerMission(on)
-  registerMemory(on)
-  registerJobs(on)
+  registerMission(on, theme)
+  registerMemory(on, theme)
+  registerJobs(on, theme)
 }

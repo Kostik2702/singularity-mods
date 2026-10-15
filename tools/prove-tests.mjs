@@ -8,7 +8,7 @@ import { join } from 'node:path'
 const MOD = 'mission-control'
 const MUTANTS = [
   { name: 'intent-takes-first-sentence', file: 'hooks/mission/model.ts', from: 'const last = saidSentences(text).at(-1)', to: 'const last = saidSentences(text)[0]' },
-  { name: 'tree-connectors-swapped', file: 'hooks/mission/model.ts', from: "lead: `${pad}${isLast ? '└─' : '├─'}`", to: "lead: `${pad}${isLast ? '├─' : '└─'}`" },
+  { name: 'tree-connectors-swapped', file: 'hooks/mission/model.ts', from: 'lead: `${pad}${isLast ? glyphs.last : glyphs.branch}`', to: 'lead: `${pad}${isLast ? glyphs.branch : glyphs.last}`' },
   { name: 'subagent-never-done', file: 'hooks/mission/model.ts', from: "(isMain || r.isTeammate ? 'idle' : 'done')", to: "(isMain || r.isTeammate ? 'idle' : 'idle')" },
   { name: 'silence-never', file: 'hooks/mission/model.ts', from: 'now - r.lastEventAt > SILENT_MS', to: 'now - r.lastEventAt < 0' },
   { name: 'refusal-forgotten', file: 'hooks/mission/model.ts', from: 'if (f.deny !== null) {', to: 'if (f.deny === "never") {' },
