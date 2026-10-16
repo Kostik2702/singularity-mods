@@ -4,8 +4,11 @@
 Reads the session's JSON on stdin (schema: code.claude.com/docs/en/statusline) and prints
 two lines in the amber of the data-slate:
 
-   ✠ OPUS 5.5 ▐ [1M] ⁜ усердие:high · думает ══╡ ⌂ ~/projects/x ╞══
-   ДУХ МАШИНЫ ▕██████▒▒▒▒▏ 60% 602k/1M · своб. 398k ┃ ⧗ 5ч ▕█▒▒▒▏ 9% ↻4ч13м ┃ ✠ ДЕСЯТИНА $34.43
+   ✠ OPUS 5.5  1M · усердие high · думает     ⌂ ~/projects/x
+   ДУХ МАШИНЫ  ██████░░░░ 60% 602k/1M · своб. 398k    ЛИМИТЫ  5ч ██░░░ 9% ↻4ч13м · 7д …    ДЕСЯТИНА  $34.43
+
+Each section opens on a plate (brass ground, dark letters), as the tabs' key caps do, and
+its values follow in amber; gauges are solid two-tone bars, as the tabs' meters are.
 
 Every section draws only with its data (rate limits come after the first answer of a
 Pro/Max plan, the context window is empty before the first call). A narrow terminal
@@ -38,7 +41,9 @@ INK2 = fg("#e09a2e")
 MUTED = fg("#9a7238")
 ACCENT = fg("#ffd27a")
 BRASS = fg("#a8823c")
-TRACK = fg("#3a2a10")
+TRACK = fg("#4a3618")
+PLATE_BG = bg("#a8823c")
+PLATE_INK = fg("#0e0a05")
 WARN = fg("#ff9f1c")
 CRIT = fg("#f03a2e")
 GOOD = fg("#c4d65a")
@@ -70,11 +75,16 @@ def human(n):
 
 
 def gauge(pct, width):
-    """A gauge between brass stops: ▕████▒▒▒▒▏, its fill coloured by the load."""
+    """A solid two-tone bar: the fill coloured by the load, the rest in dim brass."""
     if pct is None:
-        return BRASS + "▕" + TRACK + "▒" * width + BRASS + "▏" + RESET
+        return TRACK + "█" * width + RESET
     filled = int(round(min(max(pct, 0), 100) / 100 * width))
-    return BRASS + "▕" + by_load(pct) + "█" * filled + TRACK + "▒" * (width - filled) + BRASS + "▏" + RESET
+    return by_load(pct) + "█" * filled + TRACK + "█" * (width - filled) + RESET
+
+
+def plate(text, ground=None):
+    """A section's plate: its name on brass, dark letters, a space either side."""
+    return (ground or PLATE_BG) + PLATE_INK + BOLD + " " + text + " " + RESET
 
 
 def resets_in(epoch):
@@ -104,7 +114,7 @@ def short_path(path):
 
 
 def limit_chunk(label, window, compact):
-    """One limit window: 5ч ▕█▒▒▒▒▏ 9% ↻4ч13м."""
+    """One limit window: 5ч ██░░░ 9% ↻4ч13м."""
     if not isinstance(window, dict):
         return None
     pct = window.get("used_percentage")
@@ -132,7 +142,8 @@ def main():
     except ValueError:
         columns = 0
     compact = 0 < columns < 100
-    sep = " {}┃{} ".format(BRASS, RESET)
+    gap = "    "
+    dot = " {}·{} ".format(MUTED, RESET)
     lines = []
 
     # --- the first line: who works, how, and where -------------------------------
@@ -140,25 +151,25 @@ def main():
     ctx = data.get("context_window") or {}
     size = ctx.get("context_window_size")
     name = (model.get("display_name") or model.get("id") or "?").upper()
-    head = SURFACE_BG + SURFACE_INK + BOLD + " ✠ " + name + " " + RESET + BRASS + "▐" + RESET
+    head = plate("✠ " + name, SURFACE_BG)
+    facts = []
     if size:
-        head += " {}[{}]{}".format(MUTED, human(size), RESET)
-    modes = []
+        facts.append(INK2 + human(size) + RESET)
     if data.get("fast_mode"):
-        modes.append(WARN + "форсаж" + RESET)
+        facts.append(WARN + "форсаж" + RESET)
     effort = (data.get("effort") or {}).get("level")
     if effort:
-        modes.append("{}усердие:{}{}{}".format(MUTED, INK2, effort, RESET))
+        facts.append("{}усердие{} {}{}".format(MUTED, RESET, INK2 + effort, RESET))
     if (data.get("thinking") or {}).get("enabled"):
-        modes.append(INK2 + "думает" + RESET)
+        facts.append(INK2 + "думает" + RESET)
     agent = (data.get("agent") or {}).get("name")
     if agent:
-        modes.append("{}агент:{}{}{}".format(MUTED, INK2, agent, RESET))
-    if modes:
-        head += " {}⁜{} ".format(ACCENT, RESET) + (" {}·{} ".format(MUTED, RESET)).join(modes)
+        facts.append("{}агент{} {}{}".format(MUTED, RESET, INK2 + agent, RESET))
+    if facts:
+        head += " " + dot.join(facts)
     cwd = short_path(data.get("cwd") or (data.get("workspace") or {}).get("current_dir"))
     if cwd and not compact:
-        head += " {}══╡{} {}⌂ {}{} {}╞══{}".format(BRASS, RESET, MUTED, INK, cwd, BRASS, RESET)
+        head += gap + "{}⌂{} {}{}{}".format(ACCENT, RESET, INK, cwd, RESET)
     lines.append(head)
 
     # --- the second line: the Machine Spirit's memory, the limits, the tithe -----
@@ -167,26 +178,26 @@ def main():
     out_tokens = ctx.get("total_output_tokens")
     second = []
     if used_pct is not None or used_tokens is not None:
-        piece = "{}{}ДУХ МАШИНЫ{} ".format(BOLD, ACCENT, RESET) + gauge(used_pct, 8 if compact else 12)
+        piece = plate("ДУХ МАШИНЫ") + " " + gauge(used_pct, 8 if compact else 12)
         if used_pct is not None:
-            piece += " {}{:.0f}%{}".format(by_load(used_pct), used_pct, RESET)
+            piece += " {}{}{:.0f}%{}".format(BOLD, by_load(used_pct), used_pct, RESET)
         if used_tokens is not None and size:
             # used_percentage counts input tokens (cache included): used and free come from
             # the same figure, or the gauge and the numbers would disagree.
             free = max(size - used_tokens, 0)
-            piece += " {}{}/{} · своб. {}{}".format(MUTED, human(used_tokens), human(size), human(free), RESET)
+            piece += " {}{}/{}{}".format(INK2, human(used_tokens), human(size), RESET) + dot + "{}своб. {}{}".format(MUTED, human(free), RESET)
         if out_tokens and not compact:
-            piece += " {}(вывод {}){}".format(MUTED, human(out_tokens), RESET)
+            piece += dot + "{}вывод {}{}".format(MUTED, human(out_tokens), RESET)
         second.append(piece)
     limits = data.get("rate_limits") or {}
     parts = [p for p in (limit_chunk("5ч", limits.get("five_hour"), compact), limit_chunk("7д", limits.get("seven_day"), compact)) if p]
     if parts:
-        second.append("{}⧗{} ".format(ACCENT, RESET) + (" {}·{} ".format(MUTED, RESET)).join(parts))
+        second.append(plate("ЛИМИТЫ") + " " + dot.join(parts))
     cost = (data.get("cost") or {}).get("total_cost_usd")
     if cost is not None and not compact:
-        second.append("{}✠ ДЕСЯТИНА{} {}${:.2f}{}".format(MUTED, RESET, INK, cost, RESET))
+        second.append(plate("ДЕСЯТИНА") + " {}{}${:.2f}{}".format(BOLD, INK, cost, RESET))
     if second:
-        lines.append(" " + sep.join(second))
+        lines.append(gap.join(second))
 
     sys.stdout.write("\n".join(lines))
     return 0

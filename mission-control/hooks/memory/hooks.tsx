@@ -230,6 +230,56 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
     const events = byEvent(s.hooks).map(ev => `${shortEvent(ev.event)} ${fmtTokens(ev.tokens)}`).join(' · ')
     const last = s.turns.at(-1)
 
+    // The slate's band, in the status line's manner: each part opens on a brass plate,
+    // its figures follow in amber, the alerts on a plate of their own colour.
+    const slate = e.surface === 'terminal' ? theme.slate : null
+    if (slate !== null) {
+      const plate = (text: string, ground: string = slate.frame) => (
+        <Text backgroundColor={ground} color={pal.surface} bold>
+          {` ${text} `}
+        </Text>
+      )
+      const dot = <Text color={pal.muted}> · </Text>
+      return (
+        <Box flexDirection="column">
+          {!isPane && (
+            <Text wrap="truncate-end">
+              {plate('АРХИВЫ')}
+              <Text color={pal.muted}> хуки </Text>
+              <Text color={pal.ink}>≈{fmtTokens(sum(s.hooks))}</Text>
+              {events.length > 0 && <Text color={pal.muted}> ({events})</Text>}
+              {dot}
+              <Text color={pal.muted}>CLAUDE.md </Text>
+              <Text color={pal.ink}>{s.claudeMd.length > 0 ? fmtTokens(sum(s.claudeMd)) : '?'}</Text>
+              {dot}
+              <Text color={pal.muted}>поиск </Text>
+              <Text color={s.searches.length > 0 ? pal.search : pal.ink}>×{s.searches.length}</Text>
+              {s.searches.length > 0 && (
+                <Text color={pal.muted}>
+                  {' '}({s.hits} найдено · лучший {s.best === null ? '—' : s.best.toFixed(2)} · ≈{fmtTokens(sum(s.searches))} · прочит {s.reads.length}/{s.shown})
+                </Text>
+              )}
+              {dot}
+              <Text color={pal.muted}>код </Text>
+              <Text color={pal.ink}>×{s.codeQueries}</Text>
+              {last !== undefined && last.searches === 0 && <Text color={pal.warning}>    {theme.icons.warn} прошлый ход без поиска</Text>}
+            </Text>
+          )}
+          {items.length > 0 && (
+            <Text wrap="truncate-end">
+              {plate(`${theme.icons.warn} ТРЕВОГИ`, items.some(item => item.level === 'error') ? pal.critical : pal.warning)}{' '}
+              {items.map((item, i) => (
+                <Text color={item.level === 'soft' ? pal.muted : item.level === 'error' ? pal.critical : pal.warning}>
+                  {i > 0 ? ' · ' : ''}
+                  {item.text}
+                </Text>
+              ))}
+            </Text>
+          )}
+        </Box>
+      )
+    }
+
     return (
       <Box flexDirection="column">
         {!isPane && (

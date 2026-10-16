@@ -175,3 +175,19 @@ test('a reload under the same theme leaves the open tabs alone', async ($, on) =
   expect(engine.closed).toEqual([])
   expect(engine.opened).toEqual([])
 })
+
+test('the warhammer band above the prompt opens on plates, in the status line’s manner', WARHAMMER_OPTIONS, async ($, on) => {
+  // No tab is open beneath (engineBeneath answers ui.panes with none), so the band draws.
+  engineBeneath(on)
+  const ui = await $.ui.mount({
+    plugin: 'mission-control',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 160, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  })
+  const shown = screen(await ui.drawn())
+  expect(shown).toContain(' АРХИВЫ  хуки ≈')
+  expect(shown).toContain(' · CLAUDE.md ')
+  expect(shown).not.toContain('│')
+  await ui.unmount()
+})
