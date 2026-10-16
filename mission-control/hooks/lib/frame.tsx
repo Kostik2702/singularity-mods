@@ -146,8 +146,8 @@ export function skullFrame(dir: string, now: number): string {
   return `${dir.replace(/[\\/]+$/, '')}/frame-${String(k).padStart(2, '0')}.png`
 }
 
-/** A purity seal on the Archives tab: a picture of 5 x 24, hanging in a box of 8 x 19 cells. */
-export const SEAL = { columns: 8, rows: 19 } as const
+/** A purity seal's picture is 5 wide to 24 tall; the Archives tab sizes its box to the blocks beside it. */
+export const SEAL_ASPECT = { width: 5, height: 24 } as const
 
 /** Radians the cog has turned at `now`: a slow, steady turn, the same on every redraw and blit. */
 export function cogAngle(now: number): number {

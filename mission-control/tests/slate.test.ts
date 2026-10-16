@@ -206,7 +206,7 @@ test('Обряды: without pictures the cog stays, whatever was chosen', SKULL_
   await ui.unmount()
 })
 
-test('Архивы: a chosen purity seal hangs in the top left corner, the head and two reliquaries beside it', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
+test('Архивы: a chosen purity seal hangs in the top left corner, beside every block down to the vault', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
   engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
   const ui = await $.ui.mount({
     plugin: 'mission-control',
@@ -218,14 +218,17 @@ test('Архивы: a chosen purity seal hangs in the top left corner, the head 
   const drawn = await ui.drawn()
   expect(JSON.stringify(drawn)).toContain('"file":"/Users/me/purity-seal.png"')
   const shown = screen(drawn).split('\n')
-  // The seal (painted ▒) opens the rows at the left; the dial and the first reliquaries close
-  // on the column's last cell beside it, and the later ones take the whole width.
-  const dial = shown.find(row => row.includes('ПРИНЯТО ИЗ АРХИВОВ')) ?? ''
-  expect(dial.startsWith(` ${'▒'.repeat(8)}`)).toBe(true)
-  for (const title of ['ПРИНЯТО ИЗ АРХИВОВ', 'ИСТОЧНИКИ', 'КЭШ КОГИТАТОРА', 'ПОИСК В АРХИВАХ']) {
+  // The seal (painted ▒) opens every row down to the vault; each frame beside it, and the
+  // vault under it at the whole width, closes on the column's last cell.
+  for (const title of ['ПРИНЯТО ИЗ АРХИВОВ', 'ИСТОЧНИКИ', 'КЭШ КОГИТАТОРА', 'ПОИСК В АРХИВАХ', 'ЛЕТОПИСЬ ХОДОВ', 'ПРЕДЕЛ']) {
     const row = shown.find(r => r.includes(title)) ?? ''
+    expect(row.startsWith(' ▒▒▒▒▒▒')).toBe(true)
     expect([...row.trimEnd()].length).toBe(56 - 1)
   }
-  expect(shown.find(r => r.includes('ПОИСК В АРХИВАХ'))?.startsWith(' ┌')).toBe(true)
+  const vault = shown.find(r => r.includes('ЛИБРАРИУМ')) ?? ''
+  expect(vault.startsWith(' ┌')).toBe(true)
+  expect([...vault.trimEnd()].length).toBe(56 - 1)
+  // As tall as the blocks: the row above the vault still has the seal, the vault's does not.
+  expect(shown[shown.indexOf(vault) - 1]?.startsWith(' ▒')).toBe(true)
   await ui.unmount()
 })
