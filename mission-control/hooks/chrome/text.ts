@@ -90,3 +90,19 @@ export function translateHint(hint: string): string | null {
   for (const [phrase, words] of HINT_WORDS) out = out.replace(phrase, words)
   return out === hint ? null : out
 }
+
+/** What a refusal at the permission dialog leaves as the call's output. */
+const REFUSED = /doesn't want to proceed|was rejected|user (?:rejected|denied)|permission (?:was )?denied/i
+
+/**
+ * How a failed or cut rite reads, or null for one that ran: heresy found (an error), the
+ * Magister's rejection (a refusal at the dialog, told by the text the model read), a rite
+ * cut short (an abort).
+ */
+export function ritesEnd(p: { isErrored: boolean; isInterrupted: boolean; output?: unknown }): { kind: 'heresy' | 'rejected' | 'interrupted'; plate: string } | null {
+  if (p.isInterrupted) return { kind: 'interrupted', plate: '⊗ ОБРЯД ПРЕРВАН' }
+  if (!p.isErrored) return null
+  const said = typeof p.output === 'string' ? p.output : JSON.stringify(p.output ?? '')
+  if (REFUSED.test(said)) return { kind: 'rejected', plate: '⊘ ОТВЕРГНУТО МАГИСТРОМ' }
+  return { kind: 'heresy', plate: '‡ ЕРЕСЬ ОБНАРУЖЕНА' }
+}

@@ -3,7 +3,7 @@ import type { ElementTable, On, RenderElement } from 'claude-code'
 import { fmtDur } from '../lib/viz'
 import { rankOf } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
-import { decorateMarkdown, decorateNotice, litanyFor, translateHint } from './text'
+import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint } from './text'
 
 // The transcript dressed as the slate: the person's prompt in an amber frame, each
 // reply block in a brass frame with its markdown marked by crosses, each tool call a
@@ -217,21 +217,31 @@ export function registerChrome(on: On, theme: Theme): void {
   }).catch(($, e, next) => next(e))
 
   // A tool call is a rite: a thin brass frame, its kind and state on the plate (✦ runs,
-  // ☩ done, † failed, ⊗ cut short); the accent while it runs, scarlet on failure.
+  // ☩ done); the accent while it runs. A failure is heresy found: a heavy scarlet frame
+  // and its own plate, a refusal at the dialog is the Magister's rejection, a cut call a
+  // rite cut short.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const body = await next(e)
     const p = e.props
-    const color = p.isErrored ? c.critical : p.isInterrupted ? c.warning : p.isRunning ? c.accent : c.rule
-    const mark = p.isErrored ? theme.icons.error : p.isInterrupted ? theme.icons.phase.aborted : p.isRunning ? theme.icons.run : theme.icons.ok
+    const rite = summoned(p) ?? riteOf(p.tool)
+    const verdict = ritesEnd({ isErrored: p.isErrored, isInterrupted: p.isInterrupted, output: p.output })
+    if (verdict !== null) {
+      const color = verdict.kind === 'interrupted' ? c.warning : c.critical
+      return framed(
+        $.ui.resolve(e),
+        { border: verdict.kind === 'heresy' ? 'bold' : 'single', color, plate: `${verdict.plate} · ${rite}`, plateInk: color, lamp: { glyph: LAMP, color } },
+        body,
+      )
+    }
     return framed(
       $.ui.resolve(e),
       {
         border: 'single',
-        color,
-        plate: `${summoned(p) ?? riteOf(p.tool)} ${mark}`,
-        plateInk: p.isErrored ? c.critical : c.ink2,
-        lamp: { glyph: LAMP, color: p.isRunning || p.isErrored ? c.critical : LAMP_COLD },
+        color: p.isRunning ? c.accent : c.rule,
+        plate: `${rite} ${p.isRunning ? theme.icons.run : theme.icons.ok}`,
+        plateInk: c.ink2,
+        lamp: { glyph: LAMP, color: p.isRunning ? c.critical : LAMP_COLD },
       },
       body,
     )

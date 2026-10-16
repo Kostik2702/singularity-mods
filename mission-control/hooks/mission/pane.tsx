@@ -276,8 +276,8 @@ function feedRows(table: ElementTable, t: Theme, d: AgentsPaneData, room: number
         <Text color={c.muted}>{ago(d.now - a.startedAt).padStart(6)} </Text>
         <Text color={a.agentId === null ? c.ink2 : c.muted}>{clip(who(a.agentId), width).padEnd(width)} </Text>
         <Text color={mark.color}>{mark.icon} </Text>
-        <Text color={verbColor(a.kind, c)}>{verb}</Text>
-        {a.target.length > 0 ? <Text color={c.ink}> {a.target}</Text> : ''}
+        <Text color={a.status === 'error' ? c.critical : verbColor(a.kind, c)}>{verb}</Text>
+        {a.target.length > 0 ? <Text color={a.status === 'error' ? c.critical : c.ink}> {a.target}</Text> : ''}
         <Text color={c.muted}>{slow}</Text>
       </Text>
     )

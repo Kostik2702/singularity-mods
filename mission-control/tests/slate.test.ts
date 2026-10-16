@@ -232,3 +232,23 @@ test('Архивы: a chosen purity seal hangs in the top left corner, beside ev
   expect(shown[shown.indexOf(vault) - 1]?.startsWith(' ▒')).toBe(true)
   await ui.unmount()
 })
+
+test('the transcript: a failed rite reads as heresy found, a refused one as the Magister’s rejection', WARHAMMER_OPTIONS, async ($, on) => {
+  engineBeneath(on)
+  // Beneath the plugin, standing for the engine's own row.
+  on('ui.render', { component: 'ToolUse' }, () => ({ type: 'Text' as const, children: ['Bash(make)'] }))
+  const row = (output: string) =>
+    $.ui.mount({
+      plugin: 'mission-control',
+      surface: 'terminal',
+      component: 'ToolUse',
+      requestId: 'tu-1',
+      props: { tool_use_id: 'tu-1', tool: 'Bash', input: { command: 'make' }, isRunning: false, isErrored: true, isInterrupted: false, output },
+    })
+  const failed = await row('Exit code 2')
+  expect(screen(await failed.drawn())).toContain('‡ ЕРЕСЬ ОБНАРУЖЕНА · ОБРЯД · BASH')
+  await failed.unmount()
+  const refused = await row("The user doesn't want to proceed with this tool use. The tool use was rejected")
+  expect(screen(await refused.drawn())).toContain('⊘ ОТВЕРГНУТО МАГИСТРОМ · ОБРЯД · BASH')
+  await refused.unmount()
+})

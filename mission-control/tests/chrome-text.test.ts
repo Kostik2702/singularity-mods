@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { decorateMarkdown, decorateNotice, litanyFor, translateHint } from '../hooks/chrome/text'
+import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint } from '../hooks/chrome/text'
 
 describe('decorateMarkdown', () => {
   test('headings get a cross, bullets a dotted cross, quotes a dagger', () => {
@@ -62,4 +62,11 @@ test('translateHint: the mode and the keys in the cogitator’s words, the marks
   expect(translateHint('? for shortcuts')).toBe('? — руны клавиш')
   expect(translateHint('esc to interrupt')).toBe('esc — прервать обряд')
   expect(translateHint('something new')).toBeNull()
+})
+
+test('ritesEnd: heresy for an error, the Magister’s rejection for a refusal, a rite cut short for an abort', () => {
+  expect(ritesEnd({ isErrored: false, isInterrupted: false })).toBeNull()
+  expect(ritesEnd({ isErrored: true, isInterrupted: false, output: 'Exit code 1\nnot found' })?.kind).toBe('heresy')
+  expect(ritesEnd({ isErrored: true, isInterrupted: false, output: "The user doesn't want to proceed with this tool use. The tool use was rejected" })?.kind).toBe('rejected')
+  expect(ritesEnd({ isErrored: true, isInterrupted: true })?.plate).toBe('⊗ ОБРЯД ПРЕРВАН')
 })
