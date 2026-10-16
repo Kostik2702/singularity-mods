@@ -8,7 +8,7 @@
     "theme": {
       "type": "string",
       "title": "Оформление",
-      "description": "Стиль вкладок: classic — обычный; warhammer — Warhammer 40k (золото, пергамент, готика)",
+      "description": "Стиль вкладок: classic — обычный; warhammer — Warhammer 40k: янтарный дата-слейт когитатора, рамки, аквила, оформление транскрипта",
       "options": ["classic", "warhammer"],
       "default": "classic"
     }
