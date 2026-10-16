@@ -2,7 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { AgentRow, Job } from '../../types'
 import { COG, SKULL, slateKit, stamp, wrapLines } from '../lib/frame'
-import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
+import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, meter, plural } from '../lib/viz'
 import { clip } from '../mission/model'
@@ -39,6 +39,8 @@ function starter(job: Job, agents: readonly AgentRow[], t: Theme): string {
   if (job.agentId === null) return t.words.main
   const row = agents.find(r => r.id === job.agentId)
   if (row === undefined) return job.agentLabel
+  const rank = rankOf(t, row.type)
+  if (rank !== null) return row.name !== null && row.name !== row.type ? `${rank.title} ${row.name}` : rank.title
   return row.name !== null && row.name !== row.type ? `${row.name} (${row.type})` : row.type
 }
 

@@ -1,6 +1,7 @@
 import type { ElementTable, On, RenderElement } from 'claude-code'
 
 import { fmtDur } from '../lib/viz'
+import { rankOf } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { decorateMarkdown, decorateNotice, litanyFor, translateHint } from './text'
 
@@ -145,6 +146,14 @@ export function registerChrome(on: On, theme: Theme): void {
   if (slate === null) return
   const c = theme.colors
 
+  /** An Agent call's plate names the rank it summons: «ПРИЗЫВ · ☩ ИНКВИЗИТОР». */
+  const summoned = (p: { tool: string; input: unknown }): string | null => {
+    if (p.tool !== 'Agent' || typeof p.input !== 'object' || p.input === null) return null
+    const type = (p.input as { subagent_type?: unknown }).subagent_type
+    const rank = typeof type === 'string' ? rankOf(theme, type) : null
+    return rank === null ? null : `ПРИЗЫВ · ${rank.icon} ${rank.title.toUpperCase()}`
+  }
+
   // A notice is kept as one text block and never read by the model: the reload notice and
   // the recap are rewritten in the cogitator's words before they are kept and drawn.
   on('session.append', { door: 'notice' }, async ($, e, next) => {
@@ -220,7 +229,7 @@ export function registerChrome(on: On, theme: Theme): void {
       {
         border: 'single',
         color,
-        plate: `${riteOf(p.tool)} ${mark}`,
+        plate: `${summoned(p) ?? riteOf(p.tool)} ${mark}`,
         plateInk: p.isErrored ? c.critical : c.ink2,
         lamp: { glyph: LAMP, color: p.isRunning || p.isErrored ? c.critical : LAMP_COLD },
       },

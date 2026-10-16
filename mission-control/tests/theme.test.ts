@@ -52,6 +52,11 @@ test('every warhammer glyph is one narrow cell', () => {
     expect(cp >= 0x1f300).toBe(false)
   }
   for (const glyph of Object.values(WARHAMMER.tree)) expect([...glyph].length).toBe(2)
+  for (const rank of Object.values(WARHAMMER.slate?.ranks ?? {})) {
+    expect([...rank.icon].length).toBe(1)
+    expect(/\p{Emoji_Presentation}/u.test(rank.icon)).toBe(false)
+    expect(rank.icon.codePointAt(0) ?? 0).toBeLessThan(0x2e80)
+  }
 })
 
 test('the warhammer Agents tab: litany, Магистр, the vow, «во имя» and the chronicle', WARHAMMER_OPTIONS, async ($, on) => {
@@ -68,11 +73,12 @@ test('the warhammer Agents tab: litany, Магистр, the vow, «во имя»
   expect(shown).toContain('═ ✠ ИМПЕРАТОР ЗАЩИЩАЕТ ✠ ═')
   expect(shown).toContain('✠ КОГИТАТОР ЛЕГИОНА')
   expect(shown).toMatch(/╔═╡ ✠ МАГИСТР ╞═+╡ ход 1 · 0с ╞═╗/)
-  expect(shown).toMatch(/╚═┏━┫ INVESTIGATOR ┣━+┫ 0с · 1 шаг ┣━┓/)
+  // A known type is called by its Imperial rank, its heraldic mark first, the type kept after it.
+  expect(shown).toMatch(/╚═┏━┫ ℑ ИНКВИЗИТОР · INVESTIGATOR ┣━+┫ 0с · 1 шаг ┣━┓/)
   expect(shown).toContain('┃ обет: корень бага в parse.ts')
   expect(shown).toMatch(/┃ во имя:\s«Сверяю вывод mb search с регэкспом\.»/)
   expect(shown).toContain('┤ ВОКС-ЛОГ · ХРОНИКА ├')
-  expect(shown).toMatch(/↳investigator\s+☩ нашёл файлы \*\.ts/)
+  expect(shown).toMatch(/ℑИнквизитор\s+☩ нашёл файлы \*\.ts/)
   expect(shown).not.toMatch(/главный|зачем:|задача:|Лента/)
   await term.unmount()
   // The desktop draws no frames (they line up only in one-width cells): the plain layout in the theme's words.

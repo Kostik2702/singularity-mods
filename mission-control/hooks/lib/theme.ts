@@ -44,6 +44,11 @@ export type Slate = {
   hintWorking: string
   /** The run-in-background pill: what replaces "to run in background". */
   backgroundHint: string
+  /**
+   * Imperial ranks by agent type (its lower case): the title and the heraldic mark a card,
+   * a feed line and a summoning rite show; a type with none shows as it came.
+   */
+  ranks: Record<string, { title: string; icon: string }>
 }
 
 export type Theme = {
@@ -212,6 +217,22 @@ export const WARHAMMER: Theme = {
     hintIdle: '✠ Омниссия бдит',
     hintWorking: '✠ обряд свершается',
     backgroundHint: 'отослать обряд в фон',
+    ranks: {
+      investigator: { title: 'Инквизитор', icon: 'ℑ' },
+      critic: { title: 'Комиссар', icon: '★' },
+      reviewer: { title: 'Комиссар', icon: '★' },
+      validator: { title: 'Арбитр', icon: '§' },
+      historian: { title: 'Летописец', icon: '✎' },
+      explore: { title: 'Скаут', icon: '⌖' },
+      plan: { title: 'Стратег', icon: '♜' },
+      coder: { title: 'Техножрец', icon: '⌬' },
+      'web-implementer': { title: 'Техножрец', icon: '⌬' },
+      'web-viewer': { title: 'Авгур', icon: '◎' },
+      'general-purpose': { title: 'Гвардеец', icon: '✦' },
+      claude: { title: 'Гвардеец', icon: '✦' },
+      'claude-code-guide': { title: 'Магос', icon: '⌬' },
+      'statusline-setup': { title: 'Сервитор', icon: '⚬' },
+    },
   },
   colors: {
     surface: '#0e0a05',
@@ -312,6 +333,14 @@ export function themeOf(value: unknown): Theme {
  */
 export function forSurface(theme: Theme, surface: string): Theme {
   return theme.slate === null || surface === 'terminal' ? theme : { ...theme, slate: null }
+}
+
+/** An agent type's Imperial rank in a slate, or null: a type with none shows as it came. */
+export function rankOf(t: Theme, type: string): { title: string; icon: string } | null {
+  const ranks = t.slate?.ranks
+  if (ranks === undefined) return null
+  const key = type.toLowerCase()
+  return Object.prototype.hasOwnProperty.call(ranks, key) ? (ranks[key] ?? null) : null
 }
 
 /** "── Title ─────" to `width` cells, in the theme's rule. */

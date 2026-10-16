@@ -3,7 +3,7 @@ import type { ElementTable } from 'claude-code'
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { COG, cells, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
-import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
+import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, plural } from '../lib/viz'
 import { MAIN, buildTree, clip, isConfirmed, isEnded, isSilent, isWorking } from './model'
@@ -68,10 +68,21 @@ const FEED_MIN = 3
  */
 const NBSP = String.fromCharCode(0xa0)
 
-/** How the person calls an agent: main is «главный» (or the theme's word); a named agent shows its name and type. */
+/**
+ * How the person calls an agent: main is «главный» (or the theme's word); a named agent
+ * shows its name and type. A slate calls a known type by its Imperial rank, the type
+ * after it, so nothing is lost: «Инквизитор · investigator», «Техножрец vera · coder».
+ */
 export function agentName(row: AgentRow, t: Theme = CLASSIC): string {
   if (row.id === MAIN) return t.words.main
+  const rank = rankOf(t, row.type)
+  if (rank !== null) return row.name !== null && row.name !== row.type ? `${rank.title} ${row.name} · ${row.type}` : `${rank.title} · ${row.type}`
   return row.name !== null && row.name !== row.type ? `${row.name} (${row.type})` : row.type
+}
+
+/** The heraldic mark of an agent's rank in a slate, else the phase's own. */
+function rankIcon(row: AgentRow, t: Theme): string | null {
+  return row.id === MAIN ? null : (rankOf(t, row.type)?.icon ?? null)
 }
 
 function verbColor(kind: Action['kind'], c: Theme['colors']): string {
@@ -239,7 +250,9 @@ function feedWho(d: AgentsPaneData, t: Theme): (agentId: string | null) => strin
   return agentId => {
     if (agentId === null) return t.words.main
     const row = byId.get(agentId)
-    return row === undefined || !isConfirmed(row) ? '↳фон' : `↳${row.name ?? row.type}`
+    if (row === undefined || !isConfirmed(row)) return '↳фон'
+    const rank = rankOf(t, row.type)
+    return rank !== null ? `${rank.icon}${row.name ?? rank.title}` : `↳${row.name ?? row.type}`
   }
 }
 
@@ -494,7 +507,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
       ...kit.panel({
         style: isMain ? 'double' : 'heavy',
         width,
-        title: `${isMain ? '✠ ' : viewed ? `${t.icons.viewed} ` : ''}${agentName(row, t).toUpperCase()}`,
+        title: `${isMain ? '✠ ' : viewed ? `${t.icons.viewed} ` : rankIcon(row, t) !== null ? `${rankIcon(row, t)} ` : ''}${agentName(row, t).toUpperCase()}`,
         meta,
         rows: lines,
         titleColor: isMain ? c.accent : c.ink,
