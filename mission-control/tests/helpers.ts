@@ -146,7 +146,8 @@ export function engineBeneath(
     yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
     return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn' as const, usage: null }
   })
-  on('tool.call', { tool: 'Glob' }, () => ({ result: { filenames: [], durationMs: 1, numFiles: 0, truncated: false }, text: '' }))
+  // A pattern: Glob is not a built-in of every build, and the types refuse a name they do not list.
+  on('tool.call', { tool: /^Glob$/ }, () => ({ result: { filenames: [], durationMs: 1, numFiles: 0, truncated: false }, text: '' }) as never)
   on('tool.call', { tool: 'Read' }, () => ({
     result: { type: 'text', file: { filePath: 'x', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } },
     text: 'x',

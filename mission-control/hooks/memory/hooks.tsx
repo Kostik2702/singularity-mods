@@ -184,8 +184,11 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
     return ran
   }).catch(($, e, next) => next(e))
 
-  on('tool.call', { tool: 'PowerShell' }, async ($, e, next) => {
-    const invocations = findMbInvocations(e.command)
+  // A pattern, not the name: PowerShell is a built-in on Windows builds only, and this
+  // build's types would refuse a name they do not list.
+  on('tool.call', { tool: /^PowerShell$/ }, async ($, e, next) => {
+    const command = (e as { command?: unknown }).command
+    const invocations = findMbInvocations(typeof command === 'string' ? command : '')
     if (invocations.length === 0) return next(e)
     const ran = await next(e)
     if (ran.deny === undefined) {

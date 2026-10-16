@@ -206,3 +206,16 @@ test('a command with no mb search records nothing', async ($, on) => {
   expect(await ui.find({ text: /поиск ×0/ })).toBeDefined()
   await ui.unmount()
 })
+
+// The PowerShell hook matches by a pattern (a name this build's types do not list would not
+// compile): a search through PowerShell still counts as one through Bash does.
+test('an mb search through PowerShell counts on the band like one through Bash', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  on('ui.panes', () => NO_PANE)
+  on('tool.call', { tool: /^PowerShell$/ }, () => ({ result: { stdout: SEARCH_OUT, stderr: '', interrupted: false }, text: SEARCH_OUT }) as never)
+  await $.tool.call({ tool: 'PowerShell', command: 'mb search "statusline"' } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ text: /поиск ×1/ })).toBeDefined()
+  expect(await ui.find({ text: /2 hits · best 0\.68/ })).toBeDefined()
+  await ui.unmount()
+})
