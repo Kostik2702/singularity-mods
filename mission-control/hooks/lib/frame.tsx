@@ -366,7 +366,7 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     // A picture the person chose (a PNG at 3 : 1, as tools/make-art.py --from makes it) is
     // read by the terminal from its file; else the aquila embedded in the mod.
     const source = file !== null ? { file, format: 'png' as const } : { png: AQUILA_PNG }
-    return { element: <Image source={source} columns={width} rows={rows} alt="✠ аквила Империума ✠" />, rows }
+    return { element: <Image key="crest" source={source} columns={width} rows={rows} alt="✠ аквила Империума ✠" />, rows }
   }
 
   /**

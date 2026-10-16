@@ -4,14 +4,32 @@ import { parsePixmap } from './pixmap'
 import type { Pixmap } from './pixmap'
 
 /**
- * Whether the terminal draws pictures (kitty graphics: Ghostty and kitty); anywhere else
- * an Image draws its alt, so the slate keeps its glyph art. False when the environment
- * cannot be read. Shared by the tabs; `$` is followed into a function a file of the
- * module's own exports.
+ * Set once the engine said it draws a picture's alt here (a blit refused for it): the
+ * terminal was taken for one that draws pictures and is not, so the slate goes back to
+ * its cells. A module value: a reload looks again.
+ */
+let picturesRefused = false
+
+/** The engine draws a picture's alt here: no more pictures this load. */
+export function refusePictures(): void {
+  picturesRefused = true
+}
+
+/** Does a blit's refusal say the engine draws the Image's alt here (no kitty graphics)? */
+export function saysAlt(deny: string | undefined): boolean {
+  return deny !== undefined && /\balt\b|placeholder/i.test(deny)
+}
+
+/**
+ * Whether the terminal draws pictures (kitty graphics: Ghostty, kitty, WezTerm); anywhere
+ * else an Image draws its alt, so the slate draws its pictures in cells. False when the
+ * environment cannot be read, or once the engine refused a picture here. Shared by the
+ * tabs; `$` is followed into a function a file of the module's own exports.
  */
 export async function drawsPictures($: EngineInterface): Promise<boolean> {
+  if (picturesRefused) return false
   try {
-    return /ghostty|kitty/i.test(`${(await $.env.get('TERM_PROGRAM')) ?? ''} ${(await $.env.get('TERM')) ?? ''}`)
+    return /ghostty|kitty|wezterm/i.test(`${(await $.env.get('TERM_PROGRAM')) ?? ''} ${(await $.env.get('TERM')) ?? ''}`)
   } catch {
     return false
   }

@@ -20,7 +20,8 @@ import { BOOT_MS, markBoot } from './lib/boot'
 import { cogCells } from './lib/cog'
 import { COG, SKULL, cogAngle, cogPalette, skullFrame } from './lib/frame'
 import { halfBlockCells } from './lib/pixmap'
-import { drawsPictures, loadPixmap } from './lib/terminal'
+import { drawsPictures, loadPixmap, refusePictures, saysAlt } from './lib/terminal'
+import { AQUILA_PNG } from './lib/art'
 import { countDoctor } from './lib/parse'
 import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
@@ -455,15 +456,40 @@ async function hoverSkull($: $, dir: string, pictures: boolean): Promise<void> {
     if (!(await read($, jobsA)).some(j => j.status === 'run')) return
     // A picture's next file where the terminal draws pictures, else its pixmap in half blocks.
     const frame = skullFrame(dir, now)
-    const pix = pictures ? null : await loadPixmap($, frame)
-    if (!pictures && pix === null) return
+    // Asked each frame: the engine may have refused pictures here since the session began.
+    const live = pictures && (await drawsPictures($))
+    const pix = live ? null : await loadPixmap($, frame)
+    if (!live && pix === null) return
     const res =
       pix === null
         ? await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, source: { file: frame, format: 'png' } })
         : await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, cells: halfBlockCells(pix, SKULL.columns, SKULL.rows) })
+    if (saysAlt(res.deny)) {
+      // The engine draws the picture's alt here: the slate goes back to its cells.
+      refusePictures()
+      $.ui.invalidate('ui.render')
+    }
     if (res.deny !== undefined) skullRestsUntil = now + COG_REST_MS
   } catch {
     skullRestsUntil = Number.POSITIVE_INFINITY // no surface here: a reload tries again
+  }
+}
+
+/**
+ * Is the terminal really drawing pictures? Taken for one by its name (Ghostty, kitty,
+ * WezTerm), it is asked once: the crest's picture blitted again. Where the engine answers
+ * that it draws the alt there, the slate goes back to its cells, every tab redrawn.
+ */
+async function probePictures($: $): Promise<void> {
+  try {
+    if (!(await drawsPictures($))) return
+    const res = await $.ui.blit({ requestId: AGENTS_PANE, key: 'crest', source: { png: AQUILA_PNG } })
+    if (saysAlt(res.deny)) {
+      refusePictures()
+      $.ui.invalidate('ui.render')
+    }
+  } catch {
+    // no surface here: the next start asks again
   }
 }
 
@@ -545,6 +571,9 @@ export const register: Register = (on, options) => {
       .then(() => openJobsPane($, theme))
       .then(() => openAgentsPane($, theme))
       .then(() => $.ui.invalidate('ui.render'))
+      .then(() => {
+        if (theme.slate !== null) $.clock.after(2000, () => void probePictures($))
+      })
       .catch(() => undefined)
     await fanOut([
       async () => {

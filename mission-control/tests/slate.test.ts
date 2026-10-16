@@ -397,3 +397,34 @@ describe('pictures where the terminal draws none (Windows Terminal and the like)
     await ui.unmount()
   })
 })
+
+describe('WezTerm draws pictures; where the engine says otherwise, the cells come back', () => {
+  test('WezTerm: the aquila as a picture', WARHAMMER_OPTIONS, async ($, on) => {
+    engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    expect(JSON.stringify(await ui.drawn())).toContain('"png":')
+    await ui.unmount()
+  })
+
+  test('a blit refused as an alt turns the slate back to its braille aquila', WARHAMMER_OPTIONS, async ($, on) => {
+    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+    on('ui.blit', () => ({ value: { deny: 'the Image draws its alt there: no placeholder images' } }))
+    await $.session.start(SESSION)
+    await engine.clock.advance(2500)
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    const drawn = await ui.drawn()
+    expect(JSON.stringify(drawn)).not.toContain('"png":')
+    expect(screen(drawn)).toMatch(/[⠁-⣿]{6}/)
+    await ui.unmount()
+  })
+
+  test('a blit refused because the tab is not on screen changes nothing', WARHAMMER_OPTIONS, async ($, on) => {
+    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+    on('ui.blit', () => ({ value: { deny: 'nothing of this plugin is mounted there' } }))
+    await $.session.start(SESSION)
+    await engine.clock.advance(2500)
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    expect(JSON.stringify(await ui.drawn())).toContain('"png":')
+    await ui.unmount()
+  })
+})
