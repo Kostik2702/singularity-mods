@@ -239,3 +239,44 @@ test('the classic look has no awakening', async ($, on) => {
   expect(screen(await ui.drawn())).not.toContain('ИНИЦИАЦИЯ')
   await ui.unmount()
 })
+
+const SESSION_START = { cwd: '/proj', surface: 'terminal' as const, isInteractive: true }
+
+/** Records which of the plugin's clips play, answering beneath it as the player would. */
+function listen(on: Parameters<typeof engineBeneath>[0]): string[] {
+  const played: string[] = []
+  on('audio.play', (_$, e) => {
+    played.push(JSON.stringify(e))
+    return { value: undefined }
+  })
+  return played
+}
+
+test('sounds: the awakening at the start, the vox when a main turn ends; none for a subagent’s', { options: { theme: 'warhammer', sound: 'full' } }, async ($, on) => {
+  engineBeneath(on)
+  const played = listen(on)
+  await $.session.start(SESSION_START)
+  expect(played.some(p => p.includes('sounds/awake.wav'))).toBe(true)
+  await submit($, 'go')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.turn.complete({ reason: 'end', answer: 'готово', agentId: 'a1' } as never)
+  expect(played.some(p => p.includes('sounds/vox.wav'))).toBe(false)
+  await $.turn.complete({ reason: 'end', answer: 'готово' } as never)
+  expect(played.some(p => p.includes('sounds/vox.wav'))).toBe(true)
+})
+
+test('sounds: off is silence, and the classic look never sounds', { options: { theme: 'warhammer', sound: 'off' } }, async ($, on) => {
+  engineBeneath(on)
+  const played = listen(on)
+  await $.session.start(SESSION_START)
+  await $.turn.complete({ reason: 'end', answer: 'готово' } as never)
+  expect(played).toEqual([])
+})
+
+test('sounds: the classic look is silent whatever the option', { options: { sound: 'full' } }, async ($, on) => {
+  engineBeneath(on)
+  const played = listen(on)
+  await $.session.start(SESSION_START)
+  await $.turn.complete({ reason: 'end', answer: 'готово' } as never)
+  expect(played).toEqual([])
+})

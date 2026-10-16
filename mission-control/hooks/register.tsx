@@ -80,6 +80,37 @@ let cogRestsUntil = Number.NEGATIVE_INFINITY
 /** Until when the servo-skull rests after a refused blit (Обряды closed or behind another tab). */
 let skullRestsUntil = Number.NEGATIVE_INFINITY
 
+/** The slate's sounds: their gain from the `sound` option (0 is silence), set as the module registers. */
+const SOUND_GAIN: Record<string, number> = { off: 0, quiet: 0.35, full: 1 }
+let soundGain = 0
+/** Each job's status at the last look, to sound a rite's end once. */
+const riteStatus = new Map<string, string>()
+
+/** Plays one of the slate's sounds (mission-control/sounds/<name>.wav); silent where it cannot. */
+async function chime($: $, name: 'awake' | 'vox' | 'servo' | 'rite-done' | 'heresy'): Promise<void> {
+  if (soundGain <= 0) return
+  try {
+    await $.audio.play({ asset: `sounds/${name}.wav` }, { gain: soundGain })
+  } catch {
+    // no player here (Linux, Windows), or the clip could not play: the slate stays silent
+  }
+}
+
+/** Once a second: a rite that ended since the last look sounds its end, done or failed. */
+async function listenRites($: $): Promise<void> {
+  try {
+    for (const job of await read($, jobsA)) {
+      const before = riteStatus.get(job.id)
+      riteStatus.set(job.id, job.status)
+      if (before !== 'run' || job.status === 'run') continue
+      if (job.status === 'ok') await chime($, 'rite-done')
+      else if (job.status === 'error') await chime($, 'heresy')
+    }
+  } catch {
+    // a missed look is made up by the next one
+  }
+}
+
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -325,6 +356,7 @@ async function pollJobs($: $, theme: Theme): Promise<void> {
     const first = fresh[0]
     if (first !== undefined) {
       await update($, jobsA, list => markAnnounced(list, fresh.map(j => j.id)))
+      void chime($, 'servo')
       await raiseJobsPane($, first, theme)
     }
     // Elapsed times on the tab move every second even when no output did.
@@ -416,6 +448,9 @@ export const register: Register = (on, options) => {
   // The look comes from the `theme` option (/config → mission-control); a change there
   // reloads the module, so it is read once here and handed to every drawing.
   const theme = themeOf((options as Record<string, unknown> | undefined)?.theme)
+  // Sounds belong to a slate; the `sound` option sets how loud (quiet when unset).
+  const soundOpt = (options as Record<string, unknown> | undefined)?.sound
+  soundGain = theme.slate === null ? 0 : (SOUND_GAIN[typeof soundOpt === 'string' ? soundOpt : 'quiet'] ?? SOUND_GAIN.quiet ?? 0)
   // A crest picture the person chose (tools/install.mjs --aquila): an absolute PNG path.
   const chosen = (options as Record<string, unknown> | undefined)?.aquilaImage
   const crestFile = typeof chosen === 'string' && chosen.trim().length > 0 ? chosen.trim() : null
@@ -433,6 +468,7 @@ export const register: Register = (on, options) => {
       try {
         const began = await $.clock.now()
         markBoot(began)
+        void chime($, 'awake')
         const timer = $.clock.every(250, () => {
           $.ui.invalidate('ui.render')
           void $.clock.now().then(now => {
@@ -487,6 +523,7 @@ export const register: Register = (on, options) => {
         // its own timer; elsewhere both tabs' cogs turn on the one.
         const skullOn = theme.slate !== null && skullDir !== null && (await drawsPictures($))
         if (theme.slate !== null) $.clock.every(COG_MS, () => void turnCog($, theme, skullOn))
+        if (soundGain > 0) $.clock.every(1000, () => void listenRites($))
         if (skullOn && skullDir !== null) $.clock.every(SKULL.frameMs, () => void hoverSkull($, skullDir))
         $.clock.every(LIST_MS, () => void reconcile($, false))
         // A reload (or the mod set up mid-session) finds agents already at work: learn them now.
@@ -515,6 +552,10 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const answer = await next(e)
     await fanOut([
+      // The vox chirps when a main turn ends (the slate's sound).
+      async () => {
+        if (e.agentId === undefined) await chime($, 'vox')
+      },
       // Memory: a main turn's row (searches, hook text, steps, edits, cache) and the CLAUDE.md figures.
       async () => {
         if (e.agentId !== undefined) return
