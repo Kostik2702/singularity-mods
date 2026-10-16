@@ -185,3 +185,23 @@ test('without a chosen crest the embedded aquila is drawn', WARHAMMER_OPTIONS, a
   expect(tree).not.toContain('"file":')
   await ui.unmount()
 })
+
+const SKULL_OPTIONS = { options: { theme: 'warhammer', servoSkull: '/Users/me/servo-skull' } }
+
+test('Обряды: a chosen servo-skull stands in the cog’s place where the terminal draws pictures', SKULL_OPTIONS, async ($, on) => {
+  engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+  const ui = await mountJobs($, 'terminal', { cols: 56, rows: 40 })
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toMatch(/"file":"\/Users\/me\/servo-skull\/frame-\d\d\.png"/)
+  expect(tree).not.toContain('"type":"Raster"')
+  await ui.unmount()
+})
+
+test('Обряды: without pictures the cog stays, whatever was chosen', SKULL_OPTIONS, async ($, on) => {
+  engineBeneath(on)
+  const ui = await mountJobs($, 'terminal', { cols: 56, rows: 40 })
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toContain('"type":"Raster"')
+  expect(tree).not.toContain('servo-skull')
+  await ui.unmount()
+})

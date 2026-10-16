@@ -137,6 +137,15 @@ export function crestLines(width: number): string[] | null {
 /** The cog on the Agents tab: its Raster's key and box, turned a little more each frame while agents work. */
 export const COG = { key: 'cog', columns: 10, rows: 5 } as const
 
+/** A servo-skull in place of the cog: its Image's key and box, and the frames it cycles through. */
+export const SKULL = { key: 'skull', columns: 12, rows: 9, frames: 12, frameMs: 150 } as const
+
+/** The frame of the servo-skull at `now` in the folder `dir` (frame-00.png ...), the same on every redraw and blit. */
+export function skullFrame(dir: string, now: number): string {
+  const k = Math.floor(now / SKULL.frameMs) % SKULL.frames
+  return `${dir.replace(/[\\/]+$/, '')}/frame-${String(k).padStart(2, '0')}.png`
+}
+
 /** Radians the cog has turned at `now`: a slow, steady turn, the same on every redraw and blit. */
 export function cogAngle(now: number): number {
   return ((now / 1000) * 1.7) % (Math.PI * 2)
@@ -333,7 +342,7 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
    * litany, the inverse status strip, a lamp with the machine's state, the crawling
    * binaric cant and the Imperial date. Null where the column is too narrow or the
    * surface has no Raster; the caller then draws the litany and the strip alone.
-   * Takes COG.rows screen rows.
+   * Takes COG.rows screen rows, or SKULL.rows with a servo-skull.
    */
   const instruments = (o: {
     width: number
@@ -342,14 +351,23 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     strip: readonly [string, string]
     state: { label: string; awake: string; asleep: string }
     awake: boolean
+    /** A servo-skull's frames in place of the cog, where the terminal draws pictures. */
+    skullDir?: string | null
   }): JSX.Element | null => {
-    const wheel = o.width >= 44 ? cog(cogAngle(o.now)) : null
+    if (o.width < 44) return null
+    const { Image } = term
+    const skull =
+      o.skullDir != null && Image !== undefined ? (
+        <Image key={SKULL.key} source={{ file: skullFrame(o.skullDir, o.now), format: 'png' }} columns={SKULL.columns} rows={SKULL.rows} alt="☠" />
+      ) : null
+    const wheel = skull ?? cog(cogAngle(o.now))
     if (wheel === null) return null
-    const side = o.width - COG.columns - 1
+    const figure = skull !== null ? SKULL.columns : COG.columns
+    const side = o.width - figure - 1
     const second = Math.floor(o.now / 1000)
     return (
       <Box flexDirection="row">
-        <Box width={COG.columns + 1} flexShrink={0}>
+        <Box width={figure + 1} flexShrink={0}>
           {wheel}
         </Box>
         <Box flexDirection="column" width={side}>

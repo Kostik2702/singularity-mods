@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 
+import { drawsPictures } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { MAIN } from '../mission/model'
@@ -95,7 +96,7 @@ async function settle($: $, id: string, ran: Ran): Promise<void> {
   }
 }
 
-export function registerJobs(on: On, theme: Theme): void {
+export function registerJobs(on: On, theme: Theme, skullDir: string | null = null): void {
   const c = theme.colors
   // Every shell call may turn long: it is followed from its start, and shown once it is.
   on('tool.call', { tool: SHELLS }, async ($, e, next) => {
@@ -170,6 +171,8 @@ export function registerJobs(on: On, theme: Theme): void {
       jobs: await read($, jobsA),
       agents: await read($, agentsA),
       now: await $.clock.now(),
+      // A servo-skull only where the terminal draws pictures; elsewhere the cog.
+      skullDir: skullDir !== null && (await drawsPictures($)) ? skullDir : null,
     }
     return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {

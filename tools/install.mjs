@@ -13,6 +13,11 @@
 //                                       its emblem cut out locally (Python 3 + Pillow) into
 //                                       terminal/art/aquila-custom.png, never committed;
 //                                       `--aquila none` goes back to the mod's own
+//   node tools/install.mjs --servo-skull <url or file>
+//                                       a hovering servo-skull on Обряды in place of the cog:
+//                                       the picture cut out (imgqa cutout, or the rembg CLI)
+//                                       and animated locally into terminal/art/servo-skull/,
+//                                       never committed; `--servo-skull none` brings the cog back
 //   node tools/install.mjs --no-ghostty Claude Code only
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
@@ -52,6 +57,9 @@ const argv = process.argv.slice(2)
 const aquilaAt = argv.indexOf('--aquila')
 const aquilaSource = aquilaAt >= 0 ? (argv[aquilaAt + 1] ?? '') : null
 const CUSTOM_CREST = path.join(ROOT, 'terminal', 'art', 'aquila-custom.png')
+const skullAt = argv.indexOf('--servo-skull')
+const skullSource = skullAt >= 0 ? (argv[skullAt + 1] ?? '') : null
+const SKULL_DIR = path.join(ROOT, 'terminal', 'art', 'servo-skull')
 const said = []
 
 function say(line) {
@@ -106,6 +114,76 @@ function crestPicture() {
   return CUSTOM_CREST
 }
 
+function has(bin, args) {
+  try {
+    execFileSync(bin, args, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The picture at a URL or path as a PNG in `dir`/src: fetched, then read and saved by Pillow. */
+async function pictureAsPng(source, work, py) {
+  // A folder of its own: imgqa refuses to write next to (or above) its source.
+  const dir = path.join(work, 'src')
+  fs.mkdirSync(dir, { recursive: true })
+  let file = source
+  if (/^https?:\/\//.test(source)) {
+    const res = await fetch(source, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    if (!res.ok) throw new Error(`${source}: HTTP ${res.status}`)
+    file = path.join(dir, 'source.img')
+    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()))
+  }
+  const png = path.join(dir, 'source.png')
+  execFileSync(py, ['-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).convert("RGBA").save(sys.argv[2])', file, png])
+  return png
+}
+
+/** The subject of `png` on a transparent ground: imgqa cutout (its ML venv), else the rembg CLI. */
+function cutOut(png, dir) {
+  const out = path.join(dir, 'cut')
+  fs.mkdirSync(out, { recursive: true })
+  if (has('imgqa', ['--help'])) {
+    const venv = process.env.IMGQA_ML_VENV ?? path.join(os.homedir(), 'venvs', 'imgqa-ml')
+    execFileSync('imgqa', ['cutout', png, '--out', out, '--json'], { stdio: 'ignore', env: { ...process.env, IMGQA_ML_VENV: venv } })
+    const made = fs.readdirSync(out).find(f => f.endsWith('.cutout.png'))
+    if (made !== undefined) return path.join(out, made)
+  }
+  if (has('rembg', ['--help'])) {
+    const made = path.join(out, 'cut.png')
+    execFileSync('rembg', ['i', png, made], { stdio: 'ignore' })
+    return made
+  }
+  throw new Error('для --servo-skull нужен вырез фона: imgqa с ML-venv или rembg (python3 -m pip install "rembg[cpu,cli]")')
+}
+
+/**
+ * The servo-skull Обряды shows: frames made now from `--servo-skull`, the ones made
+ * before (kept on a rerun), or none (the cog) after `--servo-skull none`.
+ */
+async function skullFrames() {
+  const ready = fs.existsSync(path.join(SKULL_DIR, 'frame-00.png'))
+  if (skullSource === null) return ready ? SKULL_DIR : null
+  if (skullSource === '' || skullSource === 'none') {
+    if (!isDry && fs.existsSync(SKULL_DIR)) fs.rmSync(SKULL_DIR, { recursive: true })
+    say('Сервочереп: снят, на «Обрядах» шестерня')
+    return null
+  }
+  const py = pythonWithPillow()
+  if (py === null) throw new Error('для --servo-skull нужен Python 3 с Pillow: python3 -m pip install pillow (или укажи PYTHON=<путь>)')
+  say(`Сервочереп: вырезаю и оживляю ${skullSource}`)
+  if (isDry) return SKULL_DIR
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'servo-skull-'))
+  try {
+    const cut = cutOut(await pictureAsPng(skullSource, work, py), work)
+    execFileSync(py, [path.join(ROOT, 'tools', 'make-art.py'), '--servo-frames', cut, '--out-dir', SKULL_DIR], { stdio: 'inherit' })
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true })
+  }
+  return SKULL_DIR
+}
+
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
 function claudeDir() {
@@ -120,7 +198,7 @@ function pluginDirs(value) {
     .filter(s => s.length > 0)
 }
 
-function setupClaude(crest) {
+function setupClaude(crest, skull) {
   const dir = claudeDir()
   const file = path.join(dir, 'settings.json')
   const statePath = path.join(dir, 'singularity-mods.install.json')
@@ -149,6 +227,7 @@ function setupClaude(crest) {
       say('  mission-control: theme ← classic')
     }
     if (opts !== undefined && 'aquilaImage' in opts) delete opts.aquilaImage
+    if (opts !== undefined && 'servoSkull' in opts) delete opts.servoSkull
     write(file, `${JSON.stringify(settings, null, 2)}\n`)
     if (!isDry && fs.existsSync(statePath)) fs.rmSync(statePath)
     return
@@ -171,6 +250,10 @@ function setupClaude(crest) {
     settings.pluginConfigs['mission-control'].options.aquilaImage = crest
     say(`  mission-control: aquilaImage = ${crest}`)
   } else delete settings.pluginConfigs['mission-control'].options.aquilaImage
+  if (skull !== null) {
+    settings.pluginConfigs['mission-control'].options.servoSkull = skull
+    say(`  mission-control: servoSkull = ${skull}`)
+  } else delete settings.pluginConfigs['mission-control'].options.servoSkull
 
   if (settings.theme !== CLAUDE_THEME) {
     state.previousTheme = settings.theme ?? null
@@ -274,7 +357,7 @@ function setupGhostty() {
 
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
-  setupClaude(isUninstall ? null : crestPicture())
+  setupClaude(isUninstall ? null : crestPicture(), isUninstall ? null : await skullFrames())
   if (withGhostty) setupGhostty()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')

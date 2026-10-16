@@ -15,6 +15,12 @@ Usage: python tools/make-art.py   (from the repo root; needs Pillow)
     ground transparent, crops it and pads it to 3 : 1. Writes terminal/art/aquila-custom.png
     by default, which git ignores: someone else's artwork stays on this machine and never
     goes into the repository. tools/install.mjs --aquila runs this and points the mod at it.
+
+  python tools/make-art.py --servo-frames <cut-out PNG> [--out-dir <dir>]
+    Animates a servo-skull from a picture already cut out onto a transparent ground (imgqa
+    cutout makes one): SKULL_FRAMES frames of it hovering up and down, swaying a little,
+    its cyan optics pulsing, as frame-00.png ... in terminal/art/servo-skull/ by default,
+    git-ignored like the crest. The Processes tab shows them in place of the cog.
 """
 import base64
 import io
@@ -149,7 +155,57 @@ def cut_emblem(source: str, out: str) -> int:
     return 0
 
 
+SKULL_FRAMES = 12
+SKULL_SIZE = (240, 360)   # 2 : 3, a box of 12 x 9 terminal cells
+
+
+def servo_frames(source: str, out_dir: str) -> int:
+    """A servo-skull's frames: hovering, swaying, its optics pulsing."""
+    base = Image.open(source).convert('RGBA')
+    box = base.getchannel('A').point(lambda v: 255 if v > 24 else 0).getbbox()
+    if box is None:
+        print('make-art: the picture has no opaque subject (cut it out first)', file=sys.stderr)
+        return 1
+    base = base.crop(box)
+    # Fit inside 88% of the box, leaving room to hover and sway.
+    W2, H2 = SKULL_SIZE
+    scale = min(W2 * 0.88 / base.width, H2 * 0.88 / base.height)
+    base = base.resize((max(1, round(base.width * scale)), max(1, round(base.height * scale))), Image.LANCZOS)
+    # The optics: bright cyan pixels, blurred into a glow of their own.
+    px = base.load()
+    eyes = Image.new('L', base.size, 0)
+    ep = eyes.load()
+    for y in range(base.height):
+        for x in range(base.width):
+            r, g, b, a = px[x, y]
+            if a > 128 and g > 110 and b > 110 and (g + b) / 2 - r > 55:
+                ep[x, y] = 255
+    glow_mask = eyes.filter(ImageFilter.GaussianBlur(4))
+    os.makedirs(out_dir, exist_ok=True)
+    for old in os.listdir(out_dir):
+        if old.startswith('frame-') and old.endswith('.png'):
+            os.remove(os.path.join(out_dir, old))
+    for k in range(SKULL_FRAMES):
+        phase = 2 * math.pi * k / SKULL_FRAMES
+        sprite = base.copy()
+        pulse = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(phase * 2))
+        glow = Image.new('RGBA', base.size, (90, 255, 235, 0))
+        glow.putalpha(glow_mask.point(lambda v: int(v * pulse)))
+        sprite = Image.alpha_composite(sprite, glow)
+        sprite = sprite.rotate(math.sin(phase) * 3.0, resample=Image.BICUBIC, expand=True)
+        frame = Image.new('RGBA', SKULL_SIZE, (0, 0, 0, 0))
+        dy = round(math.sin(phase) * H2 * 0.03)
+        frame.alpha_composite(sprite, ((W2 - sprite.width) // 2, (H2 - sprite.height) // 2 + dy))
+        frame.save(os.path.join(out_dir, f'frame-{k:02d}.png'), optimize=True)
+    print(os.path.abspath(out_dir), f'{SKULL_FRAMES} frames', SKULL_SIZE)
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1] == '--servo-frames':
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out-dir' else os.path.join(root, 'terminal', 'art', 'servo-skull')
+        return servo_frames(sys.argv[2], out)
     if len(sys.argv) >= 3 and sys.argv[1] == '--from':
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out' else os.path.join(root, 'terminal', 'art', 'aquila-custom.png')

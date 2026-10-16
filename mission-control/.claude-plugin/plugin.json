@@ -22,6 +22,12 @@
       "title": "Своя аквила",
       "description": "Абсолютный путь к PNG, которую вкладка «Легион» покажет вместо встроенной аквилы (где терминал рисует картинки: Ghostty, kitty). Пусто — встроенная. Ставит tools/install.mjs --aquila <url>.",
       "default": ""
+    },
+    "servoSkull": {
+      "type": "string",
+      "title": "Сервочереп",
+      "description": "Абсолютный путь к папке с кадрами frame-00.png… сервочерепа, который вкладка «Обряды» покажет вместо шестерни (Ghostty, kitty). Пусто — шестерня. Ставит tools/install.mjs --servo-skull <url>.",
+      "default": ""
     }
   }
 }

@@ -17,7 +17,8 @@ import {
 import type { OutputRead } from './jobs/model'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
 import { cogCells } from './lib/cog'
-import { COG, cogAngle, cogPalette } from './lib/frame'
+import { COG, SKULL, cogAngle, cogPalette, skullFrame } from './lib/frame'
+import { drawsPictures } from './lib/terminal'
 import { countDoctor } from './lib/parse'
 import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
@@ -75,6 +76,8 @@ type $ = EngineInterface
 let jobsDirTriedAt = Number.NEGATIVE_INFINITY
 /** Until when the cog rests after a refused blit: a module variable, a reload tries at once. */
 let cogRestsUntil = Number.NEGATIVE_INFINITY
+/** Until when the servo-skull rests after a refused blit (Обряды closed or behind another tab). */
+let skullRestsUntil = Number.NEGATIVE_INFINITY
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -335,7 +338,7 @@ async function pollJobs($: $, theme: Theme): Promise<void> {
  * no redraw. The angle comes from the clock, so a redraw draws a cog where the blits
  * left it. When no cog took the frame (the tabs closed or hidden), they rest a while.
  */
-async function turnCog($: $, theme: Theme): Promise<void> {
+async function turnCog($: $, theme: Theme, skullOnJobs: boolean): Promise<void> {
   try {
     const slate = theme.slate
     if (slate === null) return
@@ -343,7 +346,8 @@ async function turnCog($: $, theme: Theme): Promise<void> {
     if (now < cogRestsUntil) return
     // Each tab's cog turns while its own work goes on: agents on Легион, rites on Обряды.
     const agentsAwake = (await read($, agentsA)).some(r => isWorking(r.phase))
-    const forgeAwake = (await read($, jobsA)).some(j => j.status === 'run')
+    // On Обряды a servo-skull may stand in the cog's place: it has its own timer.
+    const forgeAwake = !skullOnJobs && (await read($, jobsA)).some(j => j.status === 'run')
     if (!agentsAwake && !forgeAwake) return
     const cells = cogCells(COG.columns, COG.rows, cogAngle(now), cogPalette(theme, slate))
     let shown = false
@@ -358,6 +362,22 @@ async function turnCog($: $, theme: Theme): Promise<void> {
     if (!shown) cogRestsUntil = now + COG_REST_MS
   } catch {
     // no surface bound, or the tab drawn without a cog: the next frame tries again
+  }
+}
+
+/**
+ * The servo-skull on Обряды hovers whenever its tab is on screen: the next frame's file,
+ * swapped by a blit. A refused blit (the tab hidden, or a terminal without pictures,
+ * where the cog is drawn instead) rests it a while.
+ */
+async function hoverSkull($: $, dir: string): Promise<void> {
+  try {
+    const now = await $.clock.now()
+    if (now < skullRestsUntil) return
+    const res = await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, source: { file: skullFrame(dir, now), format: 'png' } })
+    if (res.deny !== undefined) skullRestsUntil = now + COG_REST_MS
+  } catch {
+    skullRestsUntil = Number.POSITIVE_INFINITY // no surface here: a reload tries again
   }
 }
 
@@ -398,6 +418,9 @@ export const register: Register = (on, options) => {
   // A crest picture the person chose (tools/install.mjs --aquila): an absolute PNG path.
   const chosen = (options as Record<string, unknown> | undefined)?.aquilaImage
   const crestFile = typeof chosen === 'string' && chosen.trim().length > 0 ? chosen.trim() : null
+  // A servo-skull's frames the person chose (tools/install.mjs --servo-skull): a folder.
+  const skull = (options as Record<string, unknown> | undefined)?.servoSkull
+  const skullDir = typeof skull === 'string' && skull.trim().length > 0 ? skull.trim() : null
 
   on('session.start', async ($, e, next) => {
     // The tabs open first and on their own, so a registration that fails below cannot keep
@@ -440,7 +463,11 @@ export const register: Register = (on, options) => {
       },
       async () => {
         $.clock.every(TICK_MS, () => void tick($))
-        if (theme.slate !== null) $.clock.every(COG_MS, () => void turnCog($, theme))
+        // On Обряды the servo-skull, where one is chosen and the terminal draws pictures, has
+        // its own timer; elsewhere both tabs' cogs turn on the one.
+        const skullOn = theme.slate !== null && skullDir !== null && (await drawsPictures($))
+        if (theme.slate !== null) $.clock.every(COG_MS, () => void turnCog($, theme, skullOn))
+        if (skullOn && skullDir !== null) $.clock.every(SKULL.frameMs, () => void hoverSkull($, skullDir))
         $.clock.every(LIST_MS, () => void reconcile($, false))
         // A reload (or the mod set up mid-session) finds agents already at work: learn them now.
         await reconcile($, true)
@@ -604,6 +631,6 @@ export const register: Register = (on, options) => {
 
   registerMission(on, theme, crestFile)
   registerMemory(on, theme)
-  registerJobs(on, theme)
+  registerJobs(on, theme, skullDir)
   registerChrome(on, theme)
 }

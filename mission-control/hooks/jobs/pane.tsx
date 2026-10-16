@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { AgentRow, Job } from '../../types'
-import { COG, slateKit, stamp, wrapLines } from '../lib/frame'
+import { COG, SKULL, slateKit, stamp, wrapLines } from '../lib/frame'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, meter, plural } from '../lib/viz'
@@ -16,6 +16,8 @@ export type JobsPaneData = {
   jobs: readonly Job[]
   agents: readonly AgentRow[]
   now: number
+  /** A servo-skull's frames (the `servoSkull` option) where the terminal draws pictures; absent, the cog. */
+  skullDir?: string | null
 }
 
 function endedMarks(t: Theme): Record<Exclude<Job['status'], 'run'>, { icon: string; color: string; label: string }> {
@@ -312,10 +314,11 @@ function drawJobsSlate(table: ElementTable, d: JobsPaneData, cols: number, rows:
   const block = kit.instruments({
     width: inner,
     now: d.now,
-    litany: bannerLine(t, 'jobs', inner - COG.columns - 1),
+    litany: bannerLine(t, 'jobs', inner - (d.skullDir != null ? SKULL.columns : COG.columns) - 1),
     strip: [slate.strip.jobs, head],
     state: { label: 'ГОРН', awake: 'ПЫЛАЕТ', asleep: 'ОСТЫЛ' },
     awake: running.length > 0,
+    skullDir: d.skullDir ?? null,
   })
   if (block !== null) out.push(block)
   else {

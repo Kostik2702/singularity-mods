@@ -4,3 +4,4 @@ node_modules/
 
 # A crest picture someone chose (tools/make-art.py --from): their artwork stays local
 terminal/art/aquila-custom.png
+terminal/art/servo-skull/
