@@ -22,6 +22,7 @@ import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { applyComplete, applyList, clearEnded, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
+import { registerChrome } from './chrome/hooks'
 
 // The module's entry and its lifecycle. The engine takes one unmatched hook per
 // event per module and never follows `$` into an imported function, so everything
@@ -199,7 +200,8 @@ async function openJobsPane($: $, theme: Theme): Promise<void> {
  */
 async function raiseJobsPane($: $, job: Job, theme: Theme): Promise<void> {
   try {
-    $.ui.toast(`${theme.titles.jobs}: ${theme.words.kinds[job.kind]} — ${job.description.length > 0 ? job.description : job.gist}`)
+    const what = `${theme.words.kinds[job.kind]} — ${job.description.length > 0 ? job.description : job.gist}`
+    $.ui.toast(theme.slate === null ? `${theme.titles.jobs}: ${what}` : `+++ ${theme.titles.jobs.toUpperCase()} ✠ ${what} +++`)
     const panes = await $.ui.panes()
     const mine = panes.find(p => p.id === JOBS_PANE)
     if (mine !== undefined && (mine.isShown || panes.some(p => p.isFocused))) return
@@ -560,4 +562,5 @@ export const register: Register = (on, options) => {
   registerMission(on, theme)
   registerMemory(on, theme)
   registerJobs(on, theme)
+  registerChrome(on, theme)
 }

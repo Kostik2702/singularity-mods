@@ -1,11 +1,12 @@
 import type { ElementTable } from 'claude-code'
 
 import type { AgentRow, Job } from '../../types'
+import { slateKit, stamp, wrapLines } from '../lib/frame'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
-import type { Theme } from '../lib/theme'
+import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, meter, plural } from '../lib/viz'
 import { clip } from '../mission/model'
-import { wrapTwo } from '../mission/pane'
+import { whyRows, wrapTwo } from '../mission/pane'
 import { SILENT_OUTPUT_MS, endedShown, runningShown } from './model'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
@@ -52,6 +53,7 @@ function fmtBytes(n: number): string {
  * started it and why, and how far it got; below, the ones that ended lately.
  */
 export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number, rows: number, t: Theme = CLASSIC) {
+  if (t.slate !== null) return drawJobsSlate(table, d, cols, rows, t, t.slate)
   const { Box, Text } = table
   const c = t.colors
   const w = t.words
@@ -256,6 +258,169 @@ export function drawJobsPane(table: ElementTable, d: JobsPaneData, cols: number,
           /jobs close · clear · /mc
         </Text>
       </Box>
+    </Box>
+  )
+}
+
+/** What the output says of a job's progress: the scale (when it has one), the facts, and how long it has been silent. */
+function progressOf(job: Job, now: number): { fraction: number | null; facts: string[]; silentFor: number | null } {
+  const p = job.progress
+  const facts: string[] = []
+  if (p !== null) {
+    if (p.stage !== null) facts.push(p.stage)
+    if (p.count !== null) facts.push(p.count)
+    if (p.eta !== null) facts.push(`осталось ${p.eta}`)
+    if (p.rate !== null) facts.push(p.rate)
+    if (p.metric !== null) facts.push(p.metric)
+  }
+  if (p === null || p.fraction === null) {
+    if (job.outputPath === null) facts.push('вывод пока не виден')
+    else if (job.outputSize > 0) facts.push(`вывод ${fmtBytes(job.outputSize)}`)
+    else facts.push('вывода пока нет')
+  }
+  const silentFor = job.outputAt !== null && now - job.outputAt >= SILENT_OUTPUT_MS ? now - job.outputAt : null
+  return { fraction: p === null ? null : p.fraction, facts, silentFor }
+}
+
+/** A stable number from a job's id, for the stamp on its card. */
+function seedOf(id: string): number {
+  let n = 7
+  for (const ch of id) n = (n * 31 + (ch.codePointAt(0) ?? 0)) % 1_000_003
+  return n
+}
+
+/**
+ * The Processes tab as a data-slate: the litany and the forge's status strip, each
+ * running rite a card of its own in a heavy frame (what, who, how long, gist, reason,
+ * a gauge between brass stops, the facts, the last line of output), the rites ended
+ * lately in a light frame, and the commands as key caps.
+ */
+function drawJobsSlate(table: ElementTable, d: JobsPaneData, cols: number, rows: number, t: Theme, slate: Slate) {
+  const { Box, Text } = table
+  const c = t.colors
+  const w = t.words
+  const kit = slateKit(table, t, slate)
+  const inner = Math.max(24, cols - 2)
+  const body = inner - 4
+  const running = runningShown(d.jobs, d.now)
+  const ended = endedShown(d.jobs, d.now).slice(0, ENDED_MAX)
+  const ENDED_MARK = endedMarks(t)
+  const out: JSX.Element[] = []
+
+  const banner = bannerLine(t, 'jobs', inner)
+  if (banner !== null) {
+    out.push(
+      <Text color={c.accent} bold wrap="truncate-end">
+        {banner}
+      </Text>,
+    )
+  }
+  out.push(kit.strip(slate.strip.jobs, running.length === 0 ? 'в покое' : `${running.length} ${plural(running.length, w.jobsHead)}`, inner))
+
+  for (const job of running) {
+    const lines: JSX.Element[] = []
+    if (job.description.length > 0) {
+      lines.push(
+        <Text wrap="truncate-end" color={c.ink}>
+          {job.description}
+        </Text>,
+      )
+    }
+    lines.push(
+      <Text wrap="truncate-end">
+        <Text color={c.muted}>
+          {w.gist}:{NBSP}
+        </Text>
+        <Text color={c.ink2}>{job.gist}</Text>
+      </Text>,
+    )
+    if (job.intent !== null) lines.push(...whyRows(table, t, '', w.why, job.intent, body))
+    const pr = progressOf(job, d.now)
+    if (pr.fraction !== null) {
+      const percent = `${Math.floor(pr.fraction * 100)}%`.padStart(4)
+      lines.push(
+        <Text wrap="truncate-end">
+          {kit.gauge(pr.fraction, body - percent.length - 1, c.accent)}
+          <Text color={c.ink} bold>
+            {' '}
+            {percent}
+          </Text>
+        </Text>,
+      )
+    }
+    lines.push(
+      <Text wrap="truncate-end">
+        {pr.fraction === null ? <Text color={c.accent}>{t.icons.run} </Text> : ''}
+        <Text color={c.ink2}>{pr.facts.join(' · ')}</Text>
+        {pr.silentFor !== null ? <Text color={c.warning}> · вывод молчит {fmtDur(pr.silentFor)}</Text> : ''}
+      </Text>,
+    )
+    if (job.lastLine !== null && job.lastLine.length > 0) {
+      lines.push(
+        <Text wrap="truncate-end" color={c.muted}>
+          {'› '}
+          {job.lastLine}
+        </Text>,
+      )
+    }
+    out.push(
+      ...kit.panel({
+        style: 'heavy',
+        width: inner,
+        title: `${t.icons.job} ${w.kinds[job.kind].toUpperCase()}`,
+        meta: `${starter(job, d.agents, t)} · ${fmtDur(d.now - job.startedAt)} · ${job.isBackground ? 'в фоне' : 'на виду'}`,
+        foot: stamp('ОБРЯД', seedOf(job.id)),
+        rows: lines,
+      }),
+    )
+  }
+
+  if (running.length === 0) {
+    out.push(
+      ...kit.panel({
+        style: 'light',
+        width: inner,
+        title: slate.jobsPlate,
+        meta: '▪▪▪',
+        rows: wrapLines(w.jobsNone, body, Math.max(2, rows - 12)).map(line => <Text color={c.muted}>{line}</Text>),
+        titleColor: c.ink2,
+      }),
+    )
+  }
+
+  if (ended.length > 0) {
+    out.push(
+      ...kit.panel({
+        style: 'light',
+        width: inner,
+        title: w.jobsEnded.toUpperCase(),
+        meta: String(ended.length),
+        titleColor: c.ink2,
+        rows: ended.map(job => {
+          const mark = ENDED_MARK[job.status === 'run' ? 'ok' : job.status]
+          const took = fmtDur((job.endedAt ?? d.now) - job.startedAt)
+          const code = job.exitCode !== null && job.exitCode !== 0 ? ` · код ${job.exitCode}` : ''
+          const what = job.description.length > 0 ? job.description : job.gist
+          return (
+            <Text wrap="truncate-end">
+              <Text color={mark.color}>{mark.icon} </Text>
+              <Text color={c.ink2}>{w.kinds[job.kind]}</Text>
+              <Text color={c.muted}>
+                {' · '}
+                {starter(job, d.agents, t)} · {took}
+                {code} · {clip(what, 80)}
+              </Text>
+            </Text>
+          )
+        }),
+      }),
+    )
+  }
+
+  return (
+    <Box flexDirection="column" backgroundColor={c.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
+      {out}
+      <Box marginTop={1}>{kit.keys(['/jobs close', 'clear', '/mc'])}</Box>
     </Box>
   )
 }

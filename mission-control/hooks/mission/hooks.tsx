@@ -4,6 +4,7 @@ import type { On, TurnStepResult } from 'claude-code'
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import { describeAction, launchedVerb } from '../lib/actions'
+import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
 import { drawAgentsPane } from './pane'
@@ -127,7 +128,7 @@ export function registerMission(on: On, theme: Theme): void {
       viewAgentId: e.props.view.agentId ?? null,
       jobsRunning: runningShown(await read($, jobsA), now).length,
     }
-    return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
+    return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (

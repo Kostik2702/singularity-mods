@@ -10,8 +10,46 @@ export type Palette = { [K in keyof typeof COLORS]: string }
 
 type Forms = readonly [string, string, string]
 
+/** What the turn is doing, as the engine's spinner names it. */
+export type SpinnerMode = 'requesting' | 'responding' | 'thinking' | 'tool-input' | 'tool-use'
+
+/**
+ * A data-slate: every element of a tab drawn as a panel of its own (frames with name
+ * plates, a crest, a status strip, gauges, key caps), and the transcript dressed to
+ * match. Only the words a slate writes itself live here.
+ */
+export type Slate = {
+  /** The frame colour: brass bezels around every panel. */
+  frame: string
+  /** The inverse status strip under each tab's crest: its left plate. */
+  strip: { agents: string; jobs: string; memory: string }
+  /** The feed's panel plate, and the code stamped on its bottom edge. */
+  feed: string
+  feedCode: string
+  /** The jobs pointer plate on the agents tab. */
+  jobsPlate: string
+  /** The hero dial's plate on the memory tab. */
+  memPlate: string
+  /** Plates of the transcript's rows: the person's prompt, a reply block, a slash command's output, a notification. */
+  user: string
+  reply: string
+  command: string
+  notice: string
+  /** The spinner's words per mode; each a phrase drawn instead of the engine's sampled word. */
+  spinner: Record<SpinnerMode, string>
+  /** The line that closes a turn: «☩ Обряд свершён · 12с ☩». */
+  turnDone: string
+  /** Added after the hint under the prompt, idle and while a turn runs. */
+  hintIdle: string
+  hintWorking: string
+  /** The run-in-background pill: what replaces "to run in background". */
+  backgroundHint: string
+}
+
 export type Theme = {
   id: ThemeId
+  /** Null draws the plain look: rules and rows. A slate frames every element. */
+  slate: Slate | null
   colors: Palette
   /** Pane titles, as the engine draws them on the tab. */
   titles: { agents: string; jobs: string; memory: string }
@@ -72,6 +110,7 @@ export type ThemeId = (typeof THEME_IDS)[number]
 /** The look the mod always had: every label and glyph as before themes existed. */
 export const CLASSIC: Theme = {
   id: 'classic',
+  slate: null,
   colors: COLORS,
   titles: { agents: 'Агенты', jobs: 'Процессы', memory: 'Память' },
   banner: null,
@@ -142,30 +181,54 @@ export const CLASSIC: Theme = {
 }
 
 /**
- * Warhammer 40,000: the grim Imperium. Imperial gold on scorched black, parchment
- * inks, blood for failure, gothic double rules and a litany above each tab. The
- * series keep four distinct hues (Ultramarine, Mechanicus rust, Dark Angels green,
- * Emperor's Children violet), none of them a status colour. Every glyph is a
- * single-cell symbol with no emoji presentation, so no terminal draws it double.
+ * Warhammer 40,000: a cogitator's amber data-slate. Amber phosphor on a scorched
+ * black glass, brass bezels around every panel, scarlet only for failure; a crest,
+ * an inverse status strip and a litany above each tab. The series keep four hues
+ * toned to the glass (cobalt, rust, olive phosphor, violet), none of them a status
+ * colour. Every glyph is a single-cell symbol with no emoji presentation, so no
+ * terminal draws it double.
  */
 export const WARHAMMER: Theme = {
   id: 'warhammer',
+  slate: {
+    frame: '#a8823c',
+    strip: { agents: 'КОГИТАТОР ЛЕГИОНА', jobs: 'КУЗНЯ МЕХАНИКУС', memory: 'АРХИВ КОГИТАТОРА' },
+    feed: 'ВОКС-ЛОГ · ХРОНИКА',
+    feedCode: 'ВОКС',
+    jobsPlate: 'ОБРЯДЫ',
+    memPlate: 'ПРИНЯТО ИЗ АРХИВОВ',
+    user: 'ВОЛЯ МАГИСТРА',
+    reply: 'ДОНЕСЕНИЕ',
+    command: 'ОТВЕТ КОГИТАТОРА',
+    notice: '+++',
+    spinner: {
+      requesting: 'Взываю к ноосфере',
+      responding: 'Составляю донесение',
+      thinking: 'Внемлю Духу Машины',
+      'tool-input': 'Начертываю руны',
+      'tool-use': 'Свершаю обряд',
+    },
+    turnDone: 'Обряд свершён',
+    hintIdle: '✠ Омниссия бдит',
+    hintWorking: '✠ обряд свершается',
+    backgroundHint: 'отослать обряд в фон',
+  },
   colors: {
-    surface: '#120e0b',
-    rule: '#7a5c2a',
-    track: '#2b2119',
-    ink: '#eadcb8',
-    ink2: '#c9b48a',
-    muted: '#968060',
-    accent: '#d4a843',
-    hooks: '#5b86e0',
-    claudeMd: '#cf6a35',
-    search: '#4fae62',
-    code: '#a77ad8',
-    good: '#8cbf4a',
-    warning: '#e3ad2a',
-    serious: '#d9733a',
-    critical: '#e04136',
+    surface: '#0e0a05',
+    rule: '#8a6a32',
+    track: '#2a1d0c',
+    ink: '#ffbf4d',
+    ink2: '#e09a2e',
+    muted: '#9a7238',
+    accent: '#ffd27a',
+    hooks: '#6b93c9',
+    claudeMd: '#c9612a',
+    search: '#a5b84e',
+    code: '#ab84c4',
+    good: '#c4d65a',
+    warning: '#ff9f1c',
+    serious: '#ff7a24',
+    critical: '#f03a2e',
   },
   titles: { agents: 'Легион', jobs: 'Обряды', memory: 'Архивы' },
   banner: { agents: 'Император защищает', jobs: 'Хвала Омниссии', memory: 'Знание — сила, храни его' },
@@ -240,6 +303,15 @@ const THEMES: Record<ThemeId, Theme> = { classic: CLASSIC, warhammer: WARHAMMER 
 /** The theme an option names; anything else (unset, unknown, not a string) is classic. */
 export function themeOf(value: unknown): Theme {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value) ? THEMES[value as ThemeId] : CLASSIC
+}
+
+/**
+ * The theme as a surface draws it: a slate's frames are box-drawing glyphs that line up
+ * only in the terminal's one-width cells, so any other surface gets the plain layout in
+ * the theme's palette and words.
+ */
+export function forSurface(theme: Theme, surface: string): Theme {
+  return theme.slate === null || surface === 'terminal' ? theme : { ...theme, slate: null }
 }
 
 /** "── Title ─────" to `width` cells, in the theme's rule. */

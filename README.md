@@ -48,11 +48,20 @@ The look is an option, `theme`, in the plugin's `userConfig`. Set it in `/config
 | Value | Look |
 |---|---|
 | `classic` (default) | the dark palette and labels above |
-| `warhammer` | Warhammer 40k:<br>• palette: Imperial gold and parchment on scorched black, blood for failure;<br>• lines: gothic double rules `══ ✠ Хроника ✠ ═══`, a tree drawn with `╠═ ╚═ ║`;<br>• a litany above each tab;<br>• the tabs are «Легион», «Обряды», «Архивы»; main is «Магистр»;<br>• labels: «обет», «во имя», «донесение»; jobs: «Ковка», «Освящение», «Дозор» |
+| `warhammer` | Warhammer 40k, a cogitator's amber data-slate:<br>• palette: amber phosphor on scorched black glass, brass bezels, scarlet for failure;<br>• each element a panel of its own: the aquila crest and a litany, an inverse status strip, main in a double frame `╔═╡ ✠ МАГИСТР ╞═╗`, each subagent in a heavy frame on its branch of the tree, the vox-log of calls, each rite a card with a gauge `▕████▒▒▒▏`, each archive section a reliquary with a stamp, the commands as key caps;<br>• the tabs are «Легион», «Обряды», «Архивы»; main is «Магистр»; labels «обет», «во имя», «донесение»; jobs «Ковка», «Освящение», «Дозор»;<br>• the transcript too (terminal only): your prompt in an amber frame `┫ ✠ ВОЛЯ МАГИСТРА ┣`, each reply block in a brass frame `╡ ✠ ДОНЕСЕНИЕ ╞` with `✠` before headings, `⁜` before list items and `‡` before quotes (code and tables untouched), each tool call a rite in a thin frame with its kind and state, the spinner in the cogitator's words, «☩ Обряд свершён · 12с» with a litany at the end of a turn |
 
-A theme changes only what the mod writes itself: colours, glyphs, rules, headings and labels. What an agent or a command said (task, reason, report, output) is shown as it came. Every theme glyph is one narrow cell with no emoji presentation; `tests/theme.test.ts` holds that.
+A theme changes only what the mod writes itself: colours, glyphs, frames, headings and labels. What an agent or a command said (task, reason, report, output) is shown as it came; in the transcript a reply's marks are added to the drawing, never to the stored message. A slate's frames line up only in the terminal's one-width cells, so the desktop app draws the plain layout in the theme's palette. The engine's own system lines (a plugin's «reloaded», the «※ recap») have no render site a plugin can hook: the colour theme below colours them, nothing more. Every theme glyph is one narrow cell with no emoji presentation; `tests/theme.test.ts` holds that.
 
-A new theme is one more entry in `hooks/lib/theme.ts` (a `Theme`: palette, titles, banner, rule, tree, icons, words) and its name in `plugin.json` → `userConfig.theme.options`.
+A new theme is one more entry in `hooks/lib/theme.ts` (a `Theme`: palette, titles, banner, rule, tree, icons, words, and a `slate` for the framed look or `null` for the plain one) and its name in `plugin.json` → `userConfig.theme.options`.
+
+Two more pieces finish the warhammer look, outside the mod's own drawing:
+
+| Piece | Where | Does |
+|---|---|---|
+| Claude Code colour theme «Когитатор» | `mission-control/themes/cogitator.json`, shipped with the plugin; its id is `custom:mission-control:cogitator` | the colours of everything the engine draws itself: text, the prompt's border, permission and question dialogs, toasts, diffs, the background of your messages |
+| Ghostty data-slate | `terminal/ghostty/`: `cogitator.conf` (palette, padding), `cogitator.glsl` (the shader), `aquila.png` (from `tools/make-aquila.py`) | amber glass, scanlines and a phosphor glow, and around the glass a brass housing drawn in the window's padding: bevel, gilt trim, rivets, a cross medallion in each corner, a Mechanicus hazard band. Ghostty has no per-window profile, so it applies to every Ghostty window |
+
+`node tools/install.mjs` puts all three in place (see Install).
 
 How Процессы sees a job (probed live 2026-10-14; the engine has no list of background shells for a plugin):
 - every Bash call, foreground included, writes its output as it goes to `<tmp>/claude-<uid>/<cwd slug>/<session id>/tasks/<id>.output`. The folder is found once per session by the session id under the temp roots, or learned from the first background launch's result;
@@ -60,15 +69,28 @@ How Процессы sees a job (probed live 2026-10-14; the engine has no list 
 - the end: the `[exited with code N]` line the engine appends to a background output, the task's notification (`prompt.submit`, origin `task-notification`), a `TaskStop`, a monitor's deadline, or the call's own return for a foreground command;
 - the files are polled once a second while a job runs: a stat, and the last 8 KB only when the file grew (`tail -c` above 1 MB).
 
-### Load it
+### Install
 
-Claude Code loads the mod straight from this folder, watched and hot-reloaded. In `~/.claude/settings.json`:
+On any machine, from wherever the repo is cloned (Node 18+):
 
-```json
-{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "E:/Project/singularity-mods/mission-control" } }
+```bash
+node tools/install.mjs              # the mod, its warhammer theme, the «Когитатор» colours, the Ghostty slate
+node tools/install.mjs --no-ghostty # Claude Code only (Windows: Ghostty is skipped by itself)
+node tools/install.mjs --dry-run    # say what would change, write nothing
+node tools/install.mjs --uninstall  # take the look off; the mod stays loaded, in classic
 ```
 
-Restart Claude Code after setting it, since `env` is read at start.
+It backs up each file it touches as `<file>.bak-<date>` and is safe to run again after a move or a pull. It writes:
+- `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`): `env.CLAUDE_CODE_PLUGIN_DIRS` gains `<repo>/mission-control` (other folders kept, an older clone of the mod dropped), `pluginConfigs.mission-control.options.theme = "warhammer"`, `theme = "custom:mission-control:cogitator"` (the theme before it is kept for `--uninstall`);
+- the Ghostty config (`~/.config/ghostty/config`, or `$XDG_CONFIG_HOME`, or the macOS Application Support one when it exists): one marked block `# >>> singularity-mods cogitator >>>` that sets the shader and the aquila by this repo's absolute paths and includes `terminal/ghostty/cogitator.conf`, then checks it with `ghostty +validate-config`.
+
+Then restart Claude Code (the plugin folder and the colour theme are read at start) and reload Ghostty's config (cmd+shift+, on macOS, ctrl+shift+, on Linux).
+
+By hand, the mod alone is one line in `~/.claude/settings.json`, and Claude Code then loads it straight from this folder, watched and hot-reloaded:
+
+```json
+{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/singularity-mods/mission-control" } }
+```
 
 The tabs open by themselves in a fullscreen terminal from 144 columns (from 110 once you have opened one yourself). `/mc` and `/mem` open them at any width.
 
@@ -130,4 +152,4 @@ In tests the kit's `$` has no `state` noun. Read exact state through the snapsho
 
 ### Uninstall
 
-Remove `CLAUDE_CODE_PLUGIN_DIRS` from `~/.claude/settings.json` and restart Claude Code.
+`node tools/install.mjs --uninstall` takes the look off. To unload the mod itself, remove `CLAUDE_CODE_PLUGIN_DIRS` from `~/.claude/settings.json` and restart Claude Code.

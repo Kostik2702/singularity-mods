@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { CLASSIC, WARHAMMER, bannerLine, themeOf, themedRule } from '../hooks/lib/theme'
 import { COLORS } from '../hooks/lib/viz'
 import { engineBeneath, mountAgents, mountJobs, spawn, step, submit, toolCall } from './helpers'
+import { screen } from './paint'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const WARHAMMER_OPTIONS = { options: { theme: 'warhammer' } }
@@ -61,19 +62,27 @@ test('the warhammer Agents tab: litany, Магистр, the vow, «во имя»
   engine.say('Смотрю парсер. Сверяю вывод mb search с регэкспом.')
   await step($, 'a1')
   await toolCall($, { tool: 'Glob', pattern: '*.ts' }, 'a1')
-  for (const surface of SURFACES) {
-    const ui = await mountAgents($, surface)
-    expect(await ui.find({ text: /═ ✠ ИМПЕРАТОР ЗАЩИЩАЕТ ✠ ═/ })).toBeDefined()
-    expect(await ui.find({ text: /◈ Магистр · ход 1/ })).toBeDefined()
-    expect(await ui.find({ text: /╚═✠ investigator · 0с · 1 шаг/ })).toBeDefined()
-    expect(await ui.find({ text: /обет: корень бага в parse\.ts/ })).toBeDefined()
-    expect(await ui.find({ text: /во имя:\s«Сверяю вывод mb search с регэкспом\.»/ })).toBeDefined()
-    expect(await ui.find({ text: /══ ✠ Хроника ✠ ═/ })).toBeDefined()
-    expect(await ui.find({ text: /↳investigator\s+☩ нашёл файлы \*\.ts/ })).toBeDefined()
-    // None of the classic labels leaks through.
-    expect(await ui.find({ text: /главный|зачем:|задача:|Лента/ })).toBeUndefined()
-    await ui.unmount()
-  }
+  // The terminal draws the slate: every agent a card in its frame, the feed a vox-log.
+  const term = await mountAgents($, 'terminal')
+  const shown = screen(await term.drawn())
+  expect(shown).toContain('═ ✠ ИМПЕРАТОР ЗАЩИЩАЕТ ✠ ═')
+  expect(shown).toContain('✠ КОГИТАТОР ЛЕГИОНА')
+  expect(shown).toMatch(/╔═╡ ✠ МАГИСТР ╞═+╡ ход 1 · 0с ╞═╗/)
+  expect(shown).toMatch(/╚═┏━┫ INVESTIGATOR ┣━+┫ 0с · 1 шаг ┣━┓/)
+  expect(shown).toContain('┃ обет: корень бага в parse.ts')
+  expect(shown).toMatch(/┃ во имя:\s«Сверяю вывод mb search с регэкспом\.»/)
+  expect(shown).toContain('┤ ВОКС-ЛОГ · ХРОНИКА ├')
+  expect(shown).toMatch(/↳investigator\s+☩ нашёл файлы \*\.ts/)
+  expect(shown).not.toMatch(/главный|зачем:|задача:|Лента/)
+  await term.unmount()
+  // The desktop draws no frames (they line up only in one-width cells): the plain layout in the theme's words.
+  const desk = await mountAgents($, 'desktop')
+  expect(await desk.find({ text: /═ ✠ ИМПЕРАТОР ЗАЩИЩАЕТ ✠ ═/ })).toBeDefined()
+  expect(await desk.find({ text: /◈ Магистр · ход 1/ })).toBeDefined()
+  expect(await desk.find({ text: /╚═✠ investigator · 0с · 1 шаг/ })).toBeDefined()
+  expect(await desk.find({ text: /══ ✠ Хроника ✠ ═/ })).toBeDefined()
+  expect(await desk.find({ text: /╔═╡/ })).toBeUndefined()
+  await desk.unmount()
 })
 
 test('the warhammer Processes tab: an empty one says there are no rites', WARHAMMER_OPTIONS, async ($, on) => {
@@ -105,9 +114,14 @@ test('the warhammer Processes tab: a foreground build is «Ковка», started
   const call = toolCall($, { tool: 'Bash', tool_use_id: 'tu-b', command: 'npm run build', description: 'Build the bundle' })
   await engine.clock.advance(6000)
   const ui = await mountJobs($, 'terminal')
-  expect(await ui.find({ text: /✠ Ковка · Магистр · 6с · на переднем плане/ })).toBeDefined()
-  expect(await ui.find({ text: /во имя:\s«Нужен свежий бандл\.»/ })).toBeDefined()
+  const shown = screen(await ui.drawn())
+  expect(shown).toMatch(/┏━┫ ✠ КОВКА ┣━+┫ Магистр · 6с · на виду ┣━┓/)
+  expect(shown).toMatch(/┃ во имя:\s«Нужен свежий бандл\.»/)
+  expect(shown).toMatch(/┗━+┫ ОБРЯД 0x[0-9A-F]{4} ┣━┛/)
   await ui.unmount()
+  const desk = await mountJobs($, 'desktop')
+  expect(await desk.find({ text: /✠ Ковка · Магистр · 6с · на переднем плане/ })).toBeDefined()
+  await desk.unmount()
   finish?.()
   await call
 })
@@ -124,8 +138,15 @@ test('the warhammer Memory tab: the archives, under their own litany', WARHAMMER
     })
     expect(await ui.find({ text: /ЗНАНИЕ — СИЛА, ХРАНИ ЕГО/ })).toBeDefined()
     expect(await ui.find({ text: /токенов из архивов за сессию/ })).toBeDefined()
-    expect(await ui.find({ text: /══ ✠ Источники ✠ ═/ })).toBeDefined()
-    expect(await ui.find({ text: /══ ✠ Либрариум ✠ ═/ })).toBeDefined()
+    if (surface === 'terminal') {
+      const shown = screen(await ui.drawn())
+      expect(shown).toContain('╔═╡ ✠ ПРИНЯТО ИЗ АРХИВОВ ╞')
+      expect(shown).toContain('┤ ИСТОЧНИКИ ├')
+      expect(shown).toContain('┤ ЛИБРАРИУМ ├')
+    } else {
+      expect(await ui.find({ text: /══ ✠ Источники ✠ ═/ })).toBeDefined()
+      expect(await ui.find({ text: /══ ✠ Либрариум ✠ ═/ })).toBeDefined()
+    }
     await ui.unmount()
   }
 })

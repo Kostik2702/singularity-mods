@@ -4,6 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import type { Alerts, HookInjection, MbCall, Usage } from '../../types'
 import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath, parseSearchOutput, shortEvent } from '../lib/parse'
 import type { MbInvocation } from '../lib/parse'
+import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { drawMemoryPane } from './pane'
 
@@ -275,7 +276,7 @@ export function registerMemory(on: On, theme: Theme): void {
   // The Memory tab: a dark surface filling the column, drawn by pane.tsx from the session's figures.
   on('ui.render', { component: 'Pane', requestId: MEMORY_PANE }, async ($, e) => {
     const s = await memoryData($)
-    return drawMemoryPane($.ui.resolve(e), s, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
+    return drawMemoryPane($.ui.resolve(e), s, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (

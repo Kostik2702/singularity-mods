@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 
+import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { MAIN } from '../mission/model'
 import {
@@ -170,7 +171,7 @@ export function registerJobs(on: On, theme: Theme): void {
       agents: await read($, agentsA),
       now: await $.clock.now(),
     }
-    return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, theme)
+    return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
