@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { cogCells } from '../hooks/lib/cog'
 import { THOUGHTS, thoughtFor } from '../hooks/lib/thoughts'
-import { CREST, binaryCant, cells, crestLines, edgeBottom, edgeTop, imperialDate, wrapLines } from '../hooks/lib/frame'
+import { CREST, binaryCant, cells, corruptCant, crestLines, edgeBottom, edgeTop, imperialDate, isWarped, wrapLines } from '../hooks/lib/frame'
 import type { FrameStyle } from '../hooks/lib/frame'
 import { TASKS_DIR, engineBeneath, fakeFs, mountAgents, mountJobs, spawn, step, submit, toolCall } from './helpers'
 import { screen } from './paint'
@@ -260,4 +260,45 @@ test('thought for the day: the same all day, another the next, every one short e
   expect(thoughtFor(day)).not.toBe(thoughtFor(day + 86_400_000))
   expect(new Set(THOUGHTS).size).toBe(THOUGHTS.length)
   for (const thought of THOUGHTS) expect([...thought].length).toBeLessThanOrEqual(60)
+})
+
+describe('the warp’s taint', () => {
+  test('from 80% of the context; the cant breaks a third of its cells, the same within a second', () => {
+    expect(isWarped(79)).toBe(false)
+    expect(isWarped(80)).toBe(true)
+    expect(isWarped(null)).toBe(false)
+    const cant = binaryCant(40, 0)
+    const broken = corruptCant(cant, 7)
+    expect(cells(broken)).toBe(40)
+    expect(broken).not.toBe(cant)
+    expect(corruptCant(cant, 7)).toBe(broken)
+  })
+
+  const measure = (percent: number) => ({ context: { tokens: percent * 10_000, percent, window: 1_000_000 }, rateLimits: [] })
+
+  test('Архивы: past 80% the dial turns scarlet under «‡ ВАРП-ПОРЧА»', WARHAMMER_OPTIONS, async ($, on) => {
+    engineBeneath(on)
+    on('session.measure', () => ({ changed: [] }))
+    await $.session.measure(measure(86) as never)
+    const ui = await $.ui.mount({
+      plugin: 'mission-control',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'mem-meter',
+      props: { title: 'x', isFocused: false, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+    })
+    const shown = screen(await ui.drawn())
+    expect(shown).toContain('‡ ВАРП-ПОРЧА · ДУХ ПЕРЕГРУЖЕН')
+    expect(shown).not.toContain('ПРИНЯТО ИЗ АРХИВОВ')
+    await ui.unmount()
+  })
+
+  test('Легион: past 80% the Machine Spirit is overloaded', WARHAMMER_OPTIONS, async ($, on) => {
+    engineBeneath(on)
+    on('session.measure', () => ({ changed: [] }))
+    await $.session.measure(measure(91) as never)
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    expect(screen(await ui.drawn())).toContain('ДУХ МАШИНЫ ▸ ПЕРЕГРУЖЕН ‡ ВАРП-ПОРЧА')
+    await ui.unmount()
+  })
 })

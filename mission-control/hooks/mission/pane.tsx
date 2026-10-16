@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
-import { COG, cells, slateKit, stamp } from '../lib/frame'
+import { COG, cells, isWarped, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
 import { thoughtFor } from '../lib/thoughts'
 import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
@@ -27,6 +27,8 @@ export type AgentsPaneData = {
   pictures?: boolean
   /** A PNG the person chose for the aquila (the `aquilaImage` option); absent, the mod's own. */
   crestFile?: string | null
+  /** How full the context is (percent): past WARP_AT the slate shows the warp's taint. */
+  contextPercent?: number | null
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -442,6 +444,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     strip: [slate.strip.agents, `ход ${d.turn} · в строю ${inLine}`],
     state: { label: 'ДУХ МАШИНЫ', awake: 'БОДРСТВУЕТ', asleep: 'ДРЕМЛЕТ' },
     awake,
+    warp: isWarped(d.contextPercent),
   })
   if (block !== null) {
     out.push(block)

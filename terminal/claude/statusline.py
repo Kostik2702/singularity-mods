@@ -48,6 +48,8 @@ WARN = fg("#ff9f1c")
 CRIT = fg("#f03a2e")
 GOOD = fg("#c4d65a")
 SURFACE_BG = bg("#ffd27a")
+# The context fill (percent) from which the warp's taint shows (mission-control: WARP_AT).
+WARP_AT = 80
 SURFACE_INK = fg("#0e0a05")
 
 
@@ -177,8 +179,10 @@ def main():
     used_tokens = ctx.get("total_input_tokens")
     out_tokens = ctx.get("total_output_tokens")
     second = []
+    warp = used_pct is not None and used_pct >= WARP_AT
     if used_pct is not None or used_tokens is not None:
-        piece = plate("ДУХ МАШИНЫ") + " " + gauge(used_pct, 8 if compact else 12)
+        # Past WARP_AT the warp's taint shows: the plate turns scarlet, a warning follows.
+        piece = plate("ДУХ МАШИНЫ", bg("#f03a2e") if warp else None) + " " + gauge(used_pct, 8 if compact else 12)
         if used_pct is not None:
             piece += " {}{}{:.0f}%{}".format(BOLD, by_load(used_pct), used_pct, RESET)
         if used_tokens is not None and size:
@@ -188,6 +192,8 @@ def main():
             piece += " {}{}/{}{}".format(INK2, human(used_tokens), human(size), RESET) + dot + "{}своб. {}{}".format(MUTED, human(free), RESET)
         if out_tokens and not compact:
             piece += dot + "{}вывод {}{}".format(MUTED, human(out_tokens), RESET)
+        if warp:
+            piece += " {}{}‡ ВАРП-ПОРЧА{}".format(BOLD, CRIT, RESET)
         second.append(piece)
     limits = data.get("rate_limits") or {}
     parts = [p for p in (limit_chunk("5ч", limits.get("five_hour"), compact), limit_chunk("7д", limits.get("seven_day"), compact)) if p]

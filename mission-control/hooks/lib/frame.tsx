@@ -159,6 +159,27 @@ export function cogPalette(t: Theme, slate: Slate): CogPalette {
   return { light: hex(t.colors.accent), mid: hex(slate.frame), dark: hex(t.colors.track), hub: hex(t.colors.critical) }
 }
 
+/** The context fill (percent) from which the slate shows the warp's taint. */
+export const WARP_AT = 80
+
+/** Is the Machine Spirit overloaded: the context at or past WARP_AT? */
+export function isWarped(percent: number | null | undefined): boolean {
+  return typeof percent === 'number' && percent >= WARP_AT
+}
+
+const NOISE = ['▓', '░', '▒', '#', '%', '¤', '†', '‡', '?']
+
+/** Binaric cant broken by the warp: a third of its cells turned to noise, the same within a second. */
+export function corruptCant(text: string, seed: number): string {
+  let n = Math.abs(Math.floor(seed)) % 2147483647 || 1
+  return [...text]
+    .map(ch => {
+      n = (n * 48271) % 2147483647
+      return ch !== ' ' && n % 3 === 0 ? (NOISE[n % NOISE.length] ?? ch) : ch
+    })
+    .join('')
+}
+
 const CANT_SOURCE = 'ОМНИССИЯ ВИДИТ ДУХ МАШИНЫ БДИТ ПЛОТЬ СЛАБА'
 
 /**
@@ -204,10 +225,10 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
   const { Box, Text } = table
   const c = t.colors
 
-  const edge = (parts: Part[], titleColor: string) => (
+  const edge = (parts: Part[], titleColor: string, bezel: string = slate.frame) => (
     <Text wrap="truncate-end">
       {parts.map(p => (
-        <Text color={p.role === 'frame' ? slate.frame : p.role === 'title' ? titleColor : c.muted} bold={p.role === 'title'}>
+        <Text color={p.role === 'frame' ? bezel : p.role === 'title' ? titleColor : c.muted} bold={p.role === 'title'}>
           {p.text}
         </Text>
       ))}
@@ -229,17 +250,20 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     titleColor?: string
     lead?: string
     stem?: string
+    /** The bezel's colour; the slate's brass by default (scarlet for the warp's taint). */
+    frameColor?: string
   }): JSX.Element[] => {
     const g = FRAME[o.style]
+    const bezel = o.frameColor ?? slate.frame
     const w = Math.max(8, o.width)
     const lead = o.lead ?? ''
     const stem = o.stem ?? ''
-    const side = (text: string) => <Text color={slate.frame}>{text}</Text>
+    const side = (text: string) => <Text color={bezel}>{text}</Text>
     const out: JSX.Element[] = []
     out.push(
       <Box flexDirection="row">
         {lead.length > 0 ? <Text color={c.muted}>{lead}</Text> : ''}
-        {edge(edgeTop(o.style, w, o.title, o.meta), o.titleColor ?? c.accent)}
+        {edge(edgeTop(o.style, w, o.title, o.meta), o.titleColor ?? c.accent, bezel)}
       </Box>,
     )
     for (const row of o.rows) {
@@ -257,7 +281,7 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     out.push(
       <Box flexDirection="row">
         {stem.length > 0 ? <Text color={c.muted}>{stem}</Text> : ''}
-        {edge(edgeBottom(o.style, w, o.foot), c.muted)}
+        {edge(edgeBottom(o.style, w, o.foot), c.muted, bezel)}
       </Box>,
     )
     return out
@@ -356,6 +380,8 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     awake: boolean
     /** A servo-skull's frames in place of the cog, where the terminal draws pictures. */
     skullDir?: string | null
+    /** The warp's taint (the context past WARP_AT): the state overloaded, the cant broken. */
+    warp?: boolean
   }): JSX.Element | null => {
     if (o.width < 44) return null
     const { Image } = term
@@ -379,16 +405,22 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
           </Text>
           {strip(o.strip[0], o.strip[1], side)}
           <Text wrap="truncate-end">
-            <Text color={o.awake ? c.critical : c.muted} bold>
-              {o.awake && second % 2 === 0 ? '◉' : '○'}{' '}
+            <Text color={o.awake || o.warp === true ? c.critical : c.muted} bold>
+              {o.warp === true || (o.awake && second % 2 === 0) ? '◉' : '○'}{' '}
             </Text>
             <Text color={c.muted}>{o.state.label} ▸ </Text>
-            <Text color={o.awake ? c.accent : c.muted} bold={o.awake}>
-              {o.awake ? o.state.awake : o.state.asleep}
-            </Text>
+            {o.warp === true ? (
+              <Text color={c.critical} bold>
+                ПЕРЕГРУЖЕН ‡ ВАРП-ПОРЧА
+              </Text>
+            ) : (
+              <Text color={o.awake ? c.accent : c.muted} bold={o.awake}>
+                {o.awake ? o.state.awake : o.state.asleep}
+              </Text>
+            )}
           </Text>
-          <Text color={c.rule} wrap="truncate-end">
-            {binaryCant(side, o.awake ? second * 2 : 0)}
+          <Text color={o.warp === true ? c.critical : c.rule} wrap="truncate-end">
+            {o.warp === true ? corruptCant(binaryCant(side, second * 2), second) : binaryCant(side, o.awake ? second * 2 : 0)}
           </Text>
           <Text wrap="truncate-end">
             <Text color={c.muted}>ДАТА ИМПЕРИИ </Text>

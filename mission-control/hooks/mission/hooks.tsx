@@ -26,6 +26,7 @@ const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const actionsA = atom({ plugin: 'mission-control', key: 'actions' } as const, [])
 const turnA = atom({ plugin: 'mission-control', key: 'turn' } as const, 0)
 const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
+const usageA = atom({ plugin: 'mission-control', key: 'usage' } as const, null)
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -130,6 +131,7 @@ export function registerMission(on: On, theme: Theme, crestFile: string | null =
       jobsRunning: runningShown(await read($, jobsA), now).length,
       pictures: await drawsPictures($),
       crestFile,
+      contextPercent: (await read($, usageA))?.percent ?? null,
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {

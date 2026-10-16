@@ -2,7 +2,7 @@ import type { ElementTable, RenderChildren } from 'claude-code'
 
 import type { Alerts, ClaudeMdFile, HookInjection, MbCall, TurnRow, Usage } from '../../types'
 import { fmtTokens } from '../lib/parse'
-import { SEAL_ASPECT, cells, slateKit, stamp } from '../lib/frame'
+import { SEAL_ASPECT, cells, isWarped, slateKit, stamp } from '../lib/frame'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { allocate, bigText, fmtDur, meter, pct, plural, sparkline } from '../lib/viz'
@@ -398,7 +398,9 @@ function layoutMemory(
               {bannerLine(t, 'memory', width) ?? ''}
             </Text>
             {kit.strip(slate.strip.memory, `ход ${d.turn}`, width)}
-            {kit.panel({ style: 'double', width, title: `✠ ${slate.memPlate}`, rows: heroRows })}
+            {isWarped(ctx)
+              ? kit.panel({ style: 'double', width, title: '‡ ВАРП-ПОРЧА · ДУХ ПЕРЕГРУЖЕН', rows: heroRows, titleColor: pal.critical, frameColor: pal.critical })
+              : kit.panel({ style: 'double', width, title: `✠ ${slate.memPlate}`, rows: heroRows })}
             {reliquary(sec.sources, sourcesRows, 1, fmtTokens(memTotal))}
             {reliquary(sec.cache, cacheRows, 2, hitRate === null ? '' : `${Math.round(hitRate)}%`)}
             {reliquary(sec.search, searchRows, 3, `×${searches.length}`)}
