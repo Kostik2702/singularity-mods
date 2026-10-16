@@ -2,7 +2,7 @@ import type { ElementTable, On, RenderElement } from 'claude-code'
 
 import { fmtDur } from '../lib/viz'
 import type { Slate, Theme } from '../lib/theme'
-import { decorateMarkdown, decorateNotice, litanyFor } from './text'
+import { decorateMarkdown, decorateNotice, litanyFor, translateHint } from './text'
 
 // The transcript dressed as the slate: the person's prompt in an amber frame, each
 // reply block in a brass frame with its markdown marked by crosses, each tool call a
@@ -261,10 +261,14 @@ export function registerChrome(on: On, theme: Theme): void {
     return next({ ...e, props: { ...e.props, text: `${slate.notice} ${e.props.text} ${slate.notice}` } })
   }).catch(($, e, next) => next(e))
 
-  // The hint under the prompt keeps its live pills; the litany goes at its end.
+  // The hint under the prompt in the cogitator's words, the litany at its end. A hint with
+  // no phrase known keeps the engine's line (its pills live) and gets the litany as a tail.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.isDraft) return next(e)
-    return next({ ...e, props: { ...e.props, tail: `  ${e.props.isWorking ? slate.hintWorking : slate.hintIdle}` } })
+    const litany = e.props.isWorking ? slate.hintWorking : slate.hintIdle
+    const words = translateHint(e.props.hint)
+    if (words === null) return next({ ...e, props: { ...e.props, tail: `  ${litany}` } })
+    return next({ ...e, props: { ...e.props, hint: `${words}  ${litany}` } })
   }).catch(($, e, next) => next(e))
 
   // The run-in-background pill keeps the person's own key binding.

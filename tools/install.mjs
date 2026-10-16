@@ -31,6 +31,8 @@
 //     env.CLAUDE_CODE_PLUGIN_DIRS  gains <repo>/mission-control (other folders kept)
 //     pluginConfigs.mission-control.options.theme = "warhammer"
 //     theme = "custom:mission-control:cogitator" (the one before is kept for --uninstall)
+//     statusLine = terminal/claude/statusline.py, the cogitator's instrument strip (the
+//       status line before it is kept for --uninstall)
 //   the Ghostty config: one marked block that sets the shader and the aquila by this
 //     repo's absolute paths and includes terminal/ghostty/cogitator.conf.
 // Restart Claude Code afterwards (the theme and the plugin folder are read at start) and
@@ -46,6 +48,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MOD_DIR = path.join(ROOT, 'mission-control')
 const GHOSTTY_DIR = path.join(ROOT, 'terminal', 'ghostty')
 const CLAUDE_THEME = 'custom:mission-control:cogitator'
+const STATUS_SCRIPT = path.join(ROOT, 'terminal', 'claude', 'statusline.py')
 const MOD_THEME = 'warhammer'
 const BLOCK_START = '# >>> singularity-mods cogitator >>>'
 const BLOCK_END = '# <<< singularity-mods cogitator <<<'
@@ -244,6 +247,11 @@ function setupClaude(crest, skull, sealFile) {
   backup(file)
 
   if (isUninstall) {
+    if (typeof settings.statusLine?.command === 'string' && settings.statusLine.command.includes(STATUS_SCRIPT)) {
+      if (state.previousStatusLine === undefined || state.previousStatusLine === null) delete settings.statusLine
+      else settings.statusLine = state.previousStatusLine
+      say('  statusLine ← прежняя')
+    }
     const previous = state.previousTheme
     if (settings.theme === CLAUDE_THEME) {
       if (previous === undefined || previous === null) delete settings.theme
@@ -289,12 +297,18 @@ function setupClaude(crest, skull, sealFile) {
     say(`  mission-control: puritySeal = ${sealFile}`)
   } else delete settings.pluginConfigs['mission-control'].options.puritySeal
 
-  if (settings.theme !== CLAUDE_THEME) {
-    state.previousTheme = settings.theme ?? null
-    write(statePath, `${JSON.stringify(state, null, 2)}\n`)
-  }
+  if (settings.theme !== CLAUDE_THEME) state.previousTheme = settings.theme ?? null
   settings.theme = CLAUDE_THEME
   say(`  theme = ${CLAUDE_THEME}`)
+
+  // The status line: the cogitator's instrument strip; the one it replaces is kept.
+  const python = process.platform === 'win32' ? 'python' : fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3'
+  const command = `${python} "${STATUS_SCRIPT}"`
+  const current = settings.statusLine
+  if (!(typeof current?.command === 'string' && current.command.includes(STATUS_SCRIPT))) state.previousStatusLine = current ?? null
+  settings.statusLine = { type: 'command', command, padding: 0, refreshInterval: current?.refreshInterval ?? 30 }
+  say(`  statusLine = ${command}`)
+  write(statePath, `${JSON.stringify(state, null, 2)}\n`)
   write(file, `${JSON.stringify(settings, null, 2)}\n`)
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { decorateMarkdown, decorateNotice, litanyFor } from '../hooks/chrome/text'
+import { decorateMarkdown, decorateNotice, litanyFor, translateHint } from '../hooks/chrome/text'
 
 describe('decorateMarkdown', () => {
   test('headings get a cross, bullets a dotted cross, quotes a dagger', () => {
@@ -55,4 +55,11 @@ describe('decorateNotice', () => {
     expect(decorateNotice('<local-command-stdout>ok</local-command-stdout>')).toBeNull()
     expect(decorateNotice('Compacted conversation')).toBeNull()
   })
+})
+
+test('translateHint: the mode and the keys in the cogitator’s words, the marks kept; unknown text is left', () => {
+  expect(translateHint('⏵⏵ accept edits on (shift+tab to cycle) · ← for agents')).toBe('⏵⏵ правки дозволены (shift+tab — сменить) · ← к агентам')
+  expect(translateHint('? for shortcuts')).toBe('? — руны клавиш')
+  expect(translateHint('esc to interrupt')).toBe('esc — прервать обряд')
+  expect(translateHint('something new')).toBeNull()
 })

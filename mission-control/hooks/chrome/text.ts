@@ -70,3 +70,23 @@ export function decorateNotice(text: string): string | null {
   if (RECAP.test(text)) return text.replace(RECAP, '✠ ЛЕТОПИСЬ КОГИТАТОРА: ')
   return null
 }
+
+/** The engine's hint under the prompt, in the cogitator's words; its keys and mode marks kept. */
+const HINT_WORDS: readonly (readonly [RegExp, string])[] = [
+  [/accept edits on/i, 'правки дозволены'],
+  [/plan mode on/i, 'режим замысла'],
+  [/bypass permissions on/i, 'без дозволений'],
+  [/auto mode on/i, 'самоход'],
+  [/\(shift\+tab to cycle\)/i, '(shift+tab — сменить)'],
+  [/for agents/i, 'к агентам'],
+  [/\? for shortcuts/i, '? — руны клавиш'],
+  [/esc to interrupt/i, 'esc — прервать обряд'],
+  [/to run in background/i, '— в фон'],
+]
+
+/** The hint translated; null when no phrase of it is known, so the engine's line stays. */
+export function translateHint(hint: string): string | null {
+  let out = hint
+  for (const [phrase, words] of HINT_WORDS) out = out.replace(phrase, words)
+  return out === hint ? null : out
+}
