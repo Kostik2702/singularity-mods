@@ -29,7 +29,8 @@
 //                                       servitor, magister (main); cut out locally into
 //                                       terminal/art/portraits/, never committed; <rank>=none
 //                                       takes one down
-//   node tools/install.mjs --no-ghostty Claude Code only
+//   node tools/install.mjs --no-ghostty Claude Code only (no Ghostty block)
+//   node tools/install.mjs --no-windows-terminal  no Windows Terminal fragment
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
 //
@@ -42,6 +43,10 @@
 //       status line before it is kept for --uninstall)
 //   the Ghostty config: one marked block that sets the shader and the aquila by this
 //     repo's absolute paths and includes terminal/ghostty/cogitator.conf.
+//   Windows Terminal (on Windows): a fragment, %LOCALAPPDATA%\Microsoft\Windows Terminal\
+//     Fragments\singularity-mods\cogitator.json, adding the «Cogitator» colour scheme and a
+//     profile «Когитатор (Claude Code)» that starts claude in the amber housing; your
+//     settings.json is never touched, --uninstall deletes the fragment.
 // Restart Claude Code afterwards (the theme and the plugin folder are read at start) and
 // reload Ghostty (cmd+shift+, on macOS, ctrl+shift+, on Linux).
 
@@ -65,6 +70,7 @@ const args = new Set(process.argv.slice(2))
 const isDry = args.has('--dry-run')
 const isUninstall = args.has('--uninstall')
 const withGhostty = !args.has('--no-ghostty')
+const withWindowsTerminal = !args.has('--no-windows-terminal')
 // --animated / --static choose; neither keeps what the block already says.
 const animatedFlag = args.has('--animated') ? true : args.has('--static') ? false : null
 const argv = process.argv.slice(2)
@@ -258,6 +264,15 @@ async function rankPortraits() {
   return any ? PORTRAITS_DIR : null
 }
 
+/** The python that runs the status line: the system one on macOS, else what answers. */
+function statusPython() {
+  if (process.platform !== 'win32') return fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3'
+  if (has('python', ['--version'])) return 'python'
+  if (has('py', ['-3', '--version'])) return 'py -3'
+  say('  ВНИМАНИЕ: Python 3 не найден (python, py) — статус-строке он нужен: winget install Python.Python.3.12')
+  return 'python'
+}
+
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
 function claudeDir() {
@@ -349,7 +364,7 @@ function setupClaude(crest, skull, sealFile, portraits) {
   say(`  theme = ${CLAUDE_THEME}`)
 
   // The status line: the cogitator's instrument strip; the one it replaces is kept.
-  const python = process.platform === 'win32' ? 'python' : fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3'
+  const python = statusPython()
   const command = `${python} "${STATUS_SCRIPT}"`
   const current = settings.statusLine
   if (!(typeof current?.command === 'string' && current.command.includes(STATUS_SCRIPT))) state.previousStatusLine = current ?? null
@@ -450,6 +465,97 @@ function setupGhostty() {
   }
 }
 
+// ── Windows Terminal ────────────────────────────────────────────────────────
+
+const WT_DIR = path.join(ROOT, 'terminal', 'windows-terminal')
+/** The profile's id: fixed, so a rerun updates the same profile. */
+const WT_GUID = '{6f1c5a2e-7d43-4c8b-9a1e-40c0e7a1e540}'
+
+/** Where Windows Terminal reads fragments; null off Windows (WT_FRAGMENTS_DIR overrides, for a test). */
+function wtFragmentsDir() {
+  if (process.env.WT_FRAGMENTS_DIR) return process.env.WT_FRAGMENTS_DIR
+  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return null
+  return path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Windows Terminal', 'Fragments')
+}
+
+/** Is a font of this family installed (the system's fonts and the user's own)? */
+function hasFont(prefix) {
+  const dirs = [path.join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts'), path.join(process.env.LOCALAPPDATA ?? '', 'Microsoft', 'Windows', 'Fonts')]
+  return dirs.some(dir => {
+    try {
+      return fs.readdirSync(dir).some(f => f.toLowerCase().startsWith(prefix))
+    } catch {
+      return false
+    }
+  })
+}
+
+/** The fragment: the Cogitator scheme (the palette of cogitator.conf) and the Когитатор profile. */
+function wtFragment(fontFace) {
+  return {
+    schemes: [
+      {
+        name: 'Cogitator',
+        background: '#0E0A05',
+        foreground: '#F2B04A',
+        cursorColor: '#FFD27A',
+        selectionBackground: '#5A3F12',
+        black: '#0E0A05',
+        red: '#E8452F',
+        green: '#A5B84E',
+        yellow: '#FFBF4D',
+        blue: '#6B93C9',
+        purple: '#AB84C4',
+        cyan: '#8FB8A0',
+        white: '#E09A2E',
+        brightBlack: '#5A4220',
+        brightRed: '#FF6A4D',
+        brightGreen: '#C4D65A',
+        brightYellow: '#FFD27A',
+        brightBlue: '#8FB0E0',
+        brightPurple: '#C8A0E0',
+        brightCyan: '#B0D8C0',
+        brightWhite: '#FFF0C8',
+      },
+    ],
+    profiles: [
+      {
+        guid: WT_GUID,
+        name: 'Когитатор (Claude Code)',
+        commandline: 'powershell.exe -NoLogo -NoExit -Command claude',
+        startingDirectory: '%USERPROFILE%',
+        icon: path.join(ROOT, 'terminal', 'art', 'aquila-crest.png'),
+        colorScheme: 'Cogitator',
+        ...(fontFace === null ? {} : { font: { face: fontFace, size: 13 } }),
+        padding: '44, 40',
+        cursorShape: 'filledBox',
+        tabColor: '#8A6A32',
+        backgroundImage: path.join(ROOT, 'terminal', 'ghostty', 'aquila.png'),
+        backgroundImageOpacity: 0.1,
+        backgroundImageAlignment: 'bottomRight',
+        backgroundImageStretchMode: 'none',
+        'experimental.pixelShaderPath': path.join(WT_DIR, 'cogitator.hlsl'),
+      },
+    ],
+  }
+}
+
+function setupWindowsTerminal() {
+  const dir = wtFragmentsDir()
+  if (dir === null) return
+  const file = path.join(dir, 'singularity-mods', 'cogitator.json')
+  say(`Windows Terminal: ${file}`)
+  if (isUninstall) {
+    if (!isDry && fs.existsSync(file)) fs.rmSync(file)
+    say('  фрагмент когитатора убран')
+    return
+  }
+  const meslo = process.platform === 'win32' ? hasFont('meslolgs') : true
+  if (!meslo) say('  ВНИМАНИЕ: шрифт MesloLGS Nerd Font не найден — значки ✠ ☩ ⌬ ℑ могут рисоваться неверно. Поставь: https://github.com/romkatv/powerlevel10k#manual-font-installation')
+  write(file, `${JSON.stringify(wtFragment(meslo ? 'MesloLGS Nerd Font Mono' : null), null, 2)}\n`)
+  say('  фрагмент записан: профиль «Когитатор (Claude Code)» и схема «Cogitator» (перезапусти Windows Terminal)')
+}
+
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
   setupClaude(
@@ -459,6 +565,7 @@ try {
     isUninstall ? null : await rankPortraits(),
   )
   if (withGhostty) setupGhostty()
+  if (withWindowsTerminal) setupWindowsTerminal()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')
 } catch (err) {
