@@ -31,6 +31,7 @@
 //                                       takes one down
 //   node tools/install.mjs --no-ghostty Claude Code only (no Ghostty block)
 //   node tools/install.mjs --no-windows-terminal  no Windows Terminal fragment
+//   node tools/install.mjs --no-wezterm          no WezTerm block
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
 //
@@ -47,6 +48,10 @@
 //     Fragments\singularity-mods\cogitator.json, adding the «Cogitator» colour scheme and a
 //     profile «Когитатор (Claude Code)» that starts claude in the amber housing; your
 //     settings.json is never touched, --uninstall deletes the fragment.
+//   WezTerm (where it is installed or configured): one marked block in ~/.wezterm.lua (or
+//     $WEZTERM_CONFIG_FILE), before `return config`, that applies terminal/wezterm/cogitator.lua:
+//     the palette and the brass housing, drawn per window size by tools/make-housing.py
+//     (Python 3 with numpy and Pillow).
 // Restart Claude Code afterwards (the theme and the plugin folder are read at start) and
 // reload Ghostty (cmd+shift+, on macOS, ctrl+shift+, on Linux).
 
@@ -71,6 +76,7 @@ const isDry = args.has('--dry-run')
 const isUninstall = args.has('--uninstall')
 const withGhostty = !args.has('--no-ghostty')
 const withWindowsTerminal = !args.has('--no-windows-terminal')
+const withWezTerm = !args.has('--no-wezterm')
 // --animated / --static choose; neither keeps what the block already says.
 const animatedFlag = args.has('--animated') ? true : args.has('--static') ? false : null
 const argv = process.argv.slice(2)
@@ -556,6 +562,111 @@ function setupWindowsTerminal() {
   say('  фрагмент записан: профиль «Когитатор (Claude Code)» и схема «Cogitator» (перезапусти Windows Terminal)')
 }
 
+// ── WezTerm ─────────────────────────────────────────────────────────────────
+
+const LUA_START = '-- >>> singularity-mods cogitator >>>'
+const LUA_END = '-- <<< singularity-mods cogitator <<<'
+
+/** Where WezTerm reads its config here; null when WezTerm is neither configured nor installed. */
+function weztermConfig() {
+  const env = process.env.WEZTERM_CONFIG_FILE?.trim()
+  if (env) return env
+  const home = path.join(os.homedir(), '.wezterm.lua')
+  if (fs.existsSync(home)) return home
+  const xdg = path.join(process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), '.config'), 'wezterm', 'wezterm.lua')
+  if (fs.existsSync(xdg)) return xdg
+  const installed =
+    has('wezterm', ['--version']) ||
+    (process.platform === 'win32' && fs.existsSync(path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'WezTerm', 'wezterm.exe'))) ||
+    fs.existsSync('/Applications/WezTerm.app')
+  return installed ? home : null
+}
+
+/** The absolute path of a Python with numpy and Pillow, for tools/make-housing.py; null when none. */
+function pythonWithNumpy() {
+  const tries = [[process.env.PYTHON], ['python3'], ['python'], ['py', '-3']].filter(t => t[0])
+  for (const [bin, ...pre] of tries) {
+    try {
+      const out = execFileSync(bin, [...pre, '-c', 'import sys, numpy, PIL; print(sys.executable)'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      const exe = out.trim().split(/\r?\n/).at(-1)
+      if (exe) return exe
+    } catch {
+      // not this one
+    }
+  }
+  return null
+}
+
+/** The config without our block. */
+function withoutOurLua(text) {
+  const out = []
+  let inBlock = false
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === LUA_START) {
+      inBlock = true
+      continue
+    }
+    if (line.trim() === LUA_END) {
+      inBlock = false
+      continue
+    }
+    if (!inBlock) out.push(line)
+  }
+  return out.join('\n')
+}
+
+const luaString = p => JSON.stringify(p.replace(/\\/g, '/'))
+
+function setupWezTerm() {
+  const file = weztermConfig()
+  if (file === null) return
+  say(`WezTerm: ${file}`)
+  const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  let text = withoutOurLua(before)
+  if (isUninstall) {
+    if (before.includes(LUA_START)) {
+      backup(file)
+      write(file, text)
+    }
+    say('  блок когитатора убран')
+    return
+  }
+  const py = pythonWithNumpy()
+  if (py === null) say('  ВНИМАНИЕ: нет Python 3 с numpy и Pillow — латунный корпус не нарисуется: python -m pip install numpy pillow')
+  const block = [
+    LUA_START,
+    '-- Managed by singularity-mods tools/install.mjs; --uninstall removes this block.',
+    '-- The data-slate: the Cogitator palette and the brass housing under the text (terminal/wezterm/cogitator.lua).',
+    `dofile(${luaString(path.join(ROOT, 'terminal', 'wezterm', 'cogitator.lua'))}).apply(config, {`,
+    `  root = ${luaString(ROOT)},`,
+    `  python = ${luaString(py ?? 'python')},`,
+    '})',
+    LUA_END,
+  ].join('\n')
+  if (text.trim() === '') {
+    text = ["local wezterm = require 'wezterm'", 'local config = wezterm.config_builder()', '', block, '', 'return config', ''].join('\n')
+  } else {
+    // The block goes right before the config is returned, so the slate has the last word.
+    const lines = text.split('\n')
+    const at = lines.findLastIndex(line => /^\s*return\s+config\s*$/.test(line))
+    if (at < 0) {
+      say(`  ВНИМАНИЕ: в ${file} нет строки «return config» — вставь блок перед возвратом конфига сам:\n${block}`)
+      process.exitCode = 1
+      return
+    }
+    let pos = at
+    while (pos > 0 && lines[pos - 1]?.trim() === '') {
+      lines.splice(pos - 1, 1)
+      pos -= 1
+    }
+    lines.splice(pos, 0, '', block, '')
+    text = lines.join('\n')
+  }
+  if (before.length > 0) backup(file)
+  write(file, text)
+  say('  блок когитатора записан: палитра и латунный корпус (новые окна WezTerm подхватят его сами)')
+}
+
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
   setupClaude(
@@ -566,6 +677,7 @@ try {
   )
   if (withGhostty) setupGhostty()
   if (withWindowsTerminal) setupWindowsTerminal()
+  if (withWezTerm) setupWezTerm()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')
 } catch (err) {
