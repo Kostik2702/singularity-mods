@@ -432,7 +432,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   // The crest: the detailed aquila as a picture where the terminal draws pictures,
   // else the block one; only on a tab tall enough to spare the rows.
   if (rows >= CREST_MIN_ROWS) {
-    // Where the terminal draws no pictures, the aquila in braille (the chosen one's pixmap,
+    // Where the terminal draws no pictures, the aquila in blocks (the chosen one's pixmap,
     // or the mod's own); the block glyphs only where the surface has no Raster at all.
     const picture = d.pictures === true ? kit.aquila(inner, d.crestFile ?? null) : kit.aquilaDots(inner, d.crestPix ?? null)
     if (picture !== null) {

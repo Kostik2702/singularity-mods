@@ -358,11 +358,11 @@ test('the servo-skull holds still at rest and hovers only while a rite runs', SK
 const PIX = JSON.stringify({ w: 2, h: 2, rgba: btoa(String.fromCharCode(...Array.from({ length: 4 }, () => [255, 191, 77, 255]).flat())) })
 
 describe('pictures where the terminal draws none (Windows Terminal and the like)', () => {
-  test('Легион: the aquila in braille, from the mod’s own pixmap', WARHAMMER_OPTIONS, async ($, on) => {
+  test('Легион: the aquila in blocks, from the mod’s own pixmap', WARHAMMER_OPTIONS, async ($, on) => {
     engineBeneath(on)
     const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
     const shown = screen(await ui.drawn())
-    expect(shown).toMatch(/[⠁-⣿]{6}/)
+    expect(shown).toMatch(/[▀-▟]{6}/)
     expect(shown).not.toContain('▗▄▖ ▗▄▖')
     await ui.unmount()
   })
@@ -398,23 +398,32 @@ describe('pictures where the terminal draws none (Windows Terminal and the like)
   })
 })
 
-describe('WezTerm draws pictures; where the engine says otherwise, the cells come back', () => {
-  test('WezTerm: the aquila as a picture', WARHAMMER_OPTIONS, async ($, on) => {
+describe('where the engine draws pictures; where it says otherwise, the cells come back', () => {
+  test('WezTerm: the aquila in blocks (kitty graphics, but no Unicode placeholders, which the engine needs)', WARHAMMER_OPTIONS, async ($, on) => {
     engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    const drawn = await ui.drawn()
+    expect(JSON.stringify(drawn)).not.toContain('"png":')
+    expect(screen(drawn)).toMatch(/[▀-▟]{6}/)
+    await ui.unmount()
+  })
+
+  test('Ghostty: the aquila as a picture', WARHAMMER_OPTIONS, async ($, on) => {
+    engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
     const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
     expect(JSON.stringify(await ui.drawn())).toContain('"png":')
     await ui.unmount()
   })
 
-  test('a blit refused as an alt turns the slate back to its braille aquila', WARHAMMER_OPTIONS, async ($, on) => {
-    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+  test('a blit refused as an alt turns the slate back to its aquila in blocks', WARHAMMER_OPTIONS, async ($, on) => {
+    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
     on('ui.blit', () => ({ value: { deny: 'the Image draws its alt there: no placeholder images' } }))
     await $.session.start(SESSION)
     await engine.clock.advance(2500)
     const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
     const drawn = await ui.drawn()
     expect(JSON.stringify(drawn)).not.toContain('"png":')
-    expect(screen(drawn)).toMatch(/[⠁-⣿]{6}/)
+    expect(screen(drawn)).toMatch(/[▀-▟]{6}/)
     await ui.unmount()
   })
 
@@ -432,7 +441,7 @@ describe('WezTerm draws pictures; where the engine says otherwise, the cells com
   })
 
   test('a blit refused because the tab is not on screen changes nothing', WARHAMMER_OPTIONS, async ($, on) => {
-    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
+    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
     on('ui.blit', () => ({ value: { deny: 'nothing of this plugin is mounted there' } }))
     await $.session.start(SESSION)
     await engine.clock.advance(2500)

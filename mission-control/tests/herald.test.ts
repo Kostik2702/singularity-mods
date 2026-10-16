@@ -58,11 +58,11 @@ test('the herald: under the logo, the aquila and the session in an exact frame w
   expect(shown).toContain(' /mc ')
   // Nothing counted before the first request: no «≈0 · ?» on the archives' row.
   expect(shown).toContain('АРХИВЫ     ▸ ☩ тревог нет')
-  // The aquila in braille over the frame (the terminal draws no pictures here).
+  // The aquila in blocks over the frame (the terminal draws no pictures here).
   const lines = shown.split('\n')
   const top = lines.findIndex(l => l.startsWith('╔'))
   expect(top).toBeGreaterThanOrEqual(3)
-  expect(lines.slice(0, top).some(l => /[⠁-⣿]/.test(l))).toBe(true)
+  expect(lines.slice(0, top).some(l => /[▀-▟]/.test(l))).toBe(true)
   // Every row of the frame is exactly as wide as the card.
   for (const row of lines.slice(top).filter(l => /^[╔║╚]/.test(l))) expect(cells(row.trimEnd())).toBe(HERALD_MAX_COLS)
   await ui.unmount()

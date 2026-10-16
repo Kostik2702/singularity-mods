@@ -39,7 +39,7 @@ export type HeraldData = {
   alarms: readonly string[]
   fiveHour: number | null
   sevenDay: number | null
-  /** Draw the aquila as a picture (the terminal draws them), else in braille. */
+  /** Draw the aquila as a picture (the terminal draws them), else in blocks. */
   pictures: boolean
   crestFile: string | null
   crestPix: Pixmap | null

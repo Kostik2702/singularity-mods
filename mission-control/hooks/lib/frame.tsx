@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import { AQUILA_PIXMAP, AQUILA_PNG, AQUILA_PNG_SIZE } from './art'
-import { brailleCells, halfBlockCells } from './pixmap'
+import { halfBlockCells, mosaicRuns } from './pixmap'
 import type { Pixmap } from './pixmap'
 import { cogCells, hex } from './cog'
 import type { CogPalette } from './cog'
@@ -441,16 +441,30 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
   }
 
   /**
-   * The aquila in braille, for a terminal that draws no pictures: a sharp silhouette in the
-   * emblem's own colour, from the chosen picture's pixmap or the mod's own; rows keep the
-   * picture's shape (a cell is twice as tall as wide). Null where the surface has no Raster.
+   * The aquila in a block mosaic, for a terminal that draws no pictures: each cell the block
+   * element and two colours nearest the picture, from the chosen picture's pixmap or the
+   * mod's own; rows keep the picture's shape (a cell is twice as tall as wide). Drawn as
+   * text runs, not a Raster: a Raster's palette rounds colours to the terminal's 256, and
+   * the gold went olive and rose. Null off the terminal (no Raster: the desktop app).
    */
   const aquilaDots = (width: number, pix: Pixmap | null = null): { element: JSX.Element; rows: number } | null => {
-    const { Raster } = term
-    if (Raster === undefined) return null
+    if (term.Raster === undefined) return null
     const source = pix ?? AQUILA_PIXMAP
     const rows = Math.max(3, Math.round((width * source.h) / (2 * source.w)))
-    return { element: <Raster key="crest" columns={width} rows={rows} cells={brailleCells(source, width, rows)} />, rows }
+    const element = (
+      <Box key="crest" flexDirection="column" width={width}>
+        {mosaicRuns(source, width, rows).map((runs, y) => (
+          <Text key={`r${y}`} wrap="truncate-end">
+            {runs.map((run, x) => (
+              <Text key={`c${x}`} {...(run.fg === null ? {} : { color: run.fg })} {...(run.bg === null ? {} : { backgroundColor: run.bg })}>
+                {run.text}
+              </Text>
+            ))}
+          </Text>
+        ))}
+      </Box>
+    )
+    return { element, rows }
   }
 
   /** A photograph in half blocks at `columns` × `rows`, for a terminal that draws no pictures. */

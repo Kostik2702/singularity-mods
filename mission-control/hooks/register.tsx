@@ -476,8 +476,8 @@ async function hoverSkull($: $, dir: string, pictures: boolean): Promise<void> {
 }
 
 /**
- * Is the terminal really drawing pictures? Taken for one by its name (Ghostty, kitty,
- * WezTerm), it is asked once: the crest's picture blitted again. Where the engine answers
+ * Is the terminal really drawing pictures? Taken for one by its name (Ghostty, kitty),
+ * it is asked once: the crest's picture blitted again. Where the engine answers
  * that it draws the alt there, the slate goes back to its cells, every tab redrawn.
  * The blit carries the very picture the tab draws (the chosen one when there is one):
  * the mod's own in its place would stand on Легион until the tab is drawn again.

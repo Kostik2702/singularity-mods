@@ -21,15 +21,18 @@ export function saysAlt(deny: string | undefined): boolean {
 }
 
 /**
- * Whether the terminal draws pictures (kitty graphics: Ghostty, kitty, WezTerm); anywhere
- * else an Image draws its alt, so the slate draws its pictures in cells. False when the
- * environment cannot be read, or once the engine refused a picture here. Shared by the
- * tabs; `$` is followed into a function a file of the module's own exports.
+ * Whether the terminal draws pictures: the engine draws an Image only through kitty graphics
+ * with Unicode placeholders, which Ghostty and kitty have. WezTerm has kitty graphics but no
+ * placeholders, so it is not one: taken for one, its Legion showed the Image's empty alt
+ * whenever the one probe after a start met another tab on screen. Anywhere else an Image
+ * draws its alt, so the slate draws its pictures in cells. False when the environment
+ * cannot be read, or once the engine refused a picture here. Shared by the tabs; `$` is
+ * followed into a function a file of the module's own exports.
  */
 export async function drawsPictures($: EngineInterface): Promise<boolean> {
   if (picturesRefused) return false
   try {
-    return /ghostty|kitty|wezterm/i.test(`${(await $.env.get('TERM_PROGRAM')) ?? ''} ${(await $.env.get('TERM')) ?? ''}`)
+    return /ghostty|kitty/i.test(`${(await $.env.get('TERM_PROGRAM')) ?? ''} ${(await $.env.get('TERM')) ?? ''}`)
   } catch {
     return false
   }
