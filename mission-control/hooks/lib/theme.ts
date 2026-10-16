@@ -251,7 +251,7 @@ export const WARHAMMER: Theme = {
     serious: '#ff7a24',
     critical: '#f03a2e',
   },
-  titles: { agents: 'Легион', jobs: 'Обряды', memory: 'Архивы' },
+  titles: { agents: '✠ ЛЕГИОН', jobs: '⌬ ОБРЯДЫ', memory: '✎ АРХИВЫ' },
   banner: { agents: 'Император защищает', jobs: 'Хвала Омниссии', memory: 'Знание — сила, храни его' },
   rule: { lead: '══ ✠ ', mark: '✠ ', fill: '═' },
   tree: { branch: '╠═', last: '╚═', stem: '║ ' },

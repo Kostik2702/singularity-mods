@@ -40,6 +40,12 @@ test('a themed rule and a banner fill the width exactly', () => {
 // push every row it sits on past the column: each icon is one code point from ranges
 // with neither, and each tree connector two.
 test('every warhammer glyph is one narrow cell', () => {
+  // The tabs' own marks too: the engine draws each title as it is given.
+  for (const title of Object.values(WARHAMMER.titles)) {
+    const mark = [...title][0] ?? ''
+    expect(/\p{Emoji_Presentation}/u.test(mark)).toBe(false)
+    expect(mark.codePointAt(0) ?? 0).toBeLessThan(0x2e80)
+  }
   const icons = [...Object.values(WARHAMMER.icons.phase), ...Object.values(WARHAMMER.icons).filter((v): v is string => typeof v === 'string')]
   for (const icon of icons) {
     expect([...icon].length).toBe(1)
@@ -172,7 +178,7 @@ test('a theme switch reopens the open tabs under the new titles', WARHAMMER_OPTI
   await $.session.start(SESSION)
   expect(engine.closed).toEqual(['mem-meter', 'jobs', 'agents'])
   expect(engine.opened).toEqual(['mem-meter', 'jobs', 'agents'])
-  expect(engine.titles).toEqual({ 'mem-meter': 'Архивы', jobs: 'Обряды', agents: 'Легион' })
+  expect(engine.titles).toEqual({ 'mem-meter': '✎ АРХИВЫ', jobs: '⌬ ОБРЯДЫ', agents: '✠ ЛЕГИОН' })
 })
 
 test('a reload under the same theme leaves the open tabs alone', async ($, on) => {
