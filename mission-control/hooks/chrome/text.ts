@@ -106,3 +106,19 @@ export function ritesEnd(p: { isErrored: boolean; isInterrupted: boolean; output
   if (REFUSED.test(said)) return { kind: 'rejected', plate: '⊘ ОТВЕРГНУТО МАГИСТРОМ' }
   return { kind: 'heresy', plate: '‡ ЕРЕСЬ ОБНАРУЖЕНА' }
 }
+
+/**
+ * A question to the Magister in the slate's words: a cross before each question, and
+ * before its header where the chip still holds it (12 characters). Anything else as asked;
+ * a rewrite that does not fit the tool's schema is drawn as the engine had it.
+ */
+export function willOfTheMagister(questions: readonly unknown[]): unknown[] {
+  return questions.map(q => {
+    if (typeof q !== 'object' || q === null) return q
+    const item = q as { question?: unknown; header?: unknown }
+    const out: Record<string, unknown> = { ...(q as Record<string, unknown>) }
+    if (typeof item.question === 'string' && !item.question.startsWith('✠')) out.question = `✠ ${item.question}`
+    if (typeof item.header === 'string' && !item.header.startsWith('✠') && [...item.header].length <= 10) out.header = `✠ ${item.header}`
+    return out
+  })
+}

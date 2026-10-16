@@ -3,7 +3,7 @@ import type { ElementTable, On, RenderElement } from 'claude-code'
 import { fmtDur } from '../lib/viz'
 import { rankOf } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
-import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint } from './text'
+import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint, willOfTheMagister } from './text'
 
 // The transcript dressed as the slate: the person's prompt in an amber frame, each
 // reply block in a brass frame with its markdown marked by crosses, each tool call a
@@ -272,6 +272,14 @@ export function registerChrome(on: On, theme: Theme): void {
         {onRail(table, color, body)}
       </Box>
     )
+  }).catch(($, e, next) => next(e))
+
+  // A question to the person is a request for the Magister's will: the dialog in a bold
+  // amber frame under its plate, each question and header after a cross.
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const body = await next({ ...e, props: { ...e.props, questions: willOfTheMagister(e.props.questions) } })
+    return framed($.ui.resolve(e), { border: 'bold', color: c.accent, plate: 'ЗАПРОС ВОЛИ МАГИСТРА', plateInk: c.accent }, body)
   }).catch(($, e, next) => next(e))
 
   // A status line under the logo: «+++ text +++».

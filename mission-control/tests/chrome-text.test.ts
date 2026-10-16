@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint } from '../hooks/chrome/text'
+import { decorateMarkdown, decorateNotice, litanyFor, ritesEnd, translateHint, willOfTheMagister } from '../hooks/chrome/text'
 
 describe('decorateMarkdown', () => {
   test('headings get a cross, bullets a dotted cross, quotes a dagger', () => {
@@ -69,4 +69,15 @@ test('ritesEnd: heresy for an error, the Magister’s rejection for a refusal, a
   expect(ritesEnd({ isErrored: true, isInterrupted: false, output: 'Exit code 1\nnot found' })?.kind).toBe('heresy')
   expect(ritesEnd({ isErrored: true, isInterrupted: false, output: "The user doesn't want to proceed with this tool use. The tool use was rejected" })?.kind).toBe('rejected')
   expect(ritesEnd({ isErrored: true, isInterrupted: true })?.plate).toBe('⊗ ОБРЯД ПРЕРВАН')
+})
+
+test('willOfTheMagister: a cross before each question and a short header; options, long headers and a second pass left alone', () => {
+  const asked = [{ question: 'Какой цвет?', header: 'Палитра', options: [{ label: 'Янтарь', description: 'тёплый' }], multiSelect: false }, { question: 'Что ещё?', header: 'Очень длинный' }]
+  const once = willOfTheMagister(asked)
+  expect(once).toEqual([
+    { question: '✠ Какой цвет?', header: '✠ Палитра', options: [{ label: 'Янтарь', description: 'тёплый' }], multiSelect: false },
+    { question: '✠ Что ещё?', header: 'Очень длинный' },
+  ])
+  expect(willOfTheMagister(once)).toEqual(once)
+  for (const q of once as { header: string }[]) expect([...q.header].length).toBeLessThanOrEqual(13)
 })
