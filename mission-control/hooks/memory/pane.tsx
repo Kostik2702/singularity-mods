@@ -60,11 +60,14 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   const kit = slate === null ? null : slateKit(table, t, slate)
   // Cells each block is laid out to: the column, or the inside of a slate's frame.
   const span = slate === null ? inner : inner - 4
-  // A purity seal hangs at the head's right: the litany, the strip and the dial make room.
+  // A purity seal hangs in the head's top left corner: the litany, the strip, the dial and
+  // the first two reliquaries stand beside it, laid out to the room it leaves them.
   const { Image } = table as Partial<ElementTable<'terminal'>>
   const sealOn = slate !== null && d.sealFile != null && Image !== undefined && inner >= 36
   const beside = sealOn ? SEAL.columns + 1 : 0
   const heroSpan = span - beside
+  /** Cells the blocks beside the seal (the dial, sources, cache) are laid out to. */
+  const topSpan = span - beside
 
   const section = (title: string, body: RenderChildren) => {
     const r = themedRule(t, title, inner)
@@ -89,8 +92,8 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
     </Text>
   )
 
-  const meterRow = (label: string, percent: number | null, color: string) => {
-    const width = Math.max(6, span - LABEL - 5)
+  const meterRow = (label: string, percent: number | null, color: string, room = span) => {
+    const width = Math.max(6, room - LABEL - 5)
     const figure = <Text color={pal.ink2}>{`${percent === null ? '—' : Math.round(percent)}%`.padStart(5)}</Text>
     if (kit !== null) {
       return (
@@ -146,7 +149,7 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   // ── Sources: one stacked bar, then a labelled row per source ──────────
   const split = allocate(
     sources.map(src => src.tokens),
-    span,
+    topSpan,
   )
   const bar = (
     <Text>
@@ -202,7 +205,7 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   const cacheRows: JSX.Element[] = []
   if (measured.length === 0) cacheRows.push(<Text color={pal.muted}>появится после следующего ответа модели</Text>)
   else {
-    cacheRows.push(meterRow('из кэша', hitRate, hitRate !== null && hitRate < 50 ? pal.warning : pal.accent))
+    cacheRows.push(meterRow('из кэша', hitRate, hitRate !== null && hitRate < 50 ? pal.warning : pal.accent, topSpan))
     cacheRows.push(
       <Text wrap="truncate-end">
         <Text color={pal.muted}>{'прочитано'.padEnd(LABEL)}</Text>
@@ -356,30 +359,30 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
     // The slate: the crest over the litany and the strip, the figure on a dial in a double
     // frame (a purity seal hanging beside them, where one is chosen), then each section a
     // reliquary of its own, its stamp on the bottom edge.
-    const reliquary = (title: string, list: readonly JSX.Element[], n: number, meta = '') =>
-      kit.panel({ style: 'light', width: inner, title: title.toUpperCase(), meta, foot: stamp('АРХ', n * 977 + d.turn), rows: list, titleColor: pal.ink2 })
+    const reliquary = (title: string, list: readonly JSX.Element[], n: number, meta = '', width = inner) =>
+      kit.panel({ style: 'light', width, title: title.toUpperCase(), meta, foot: stamp('АРХ', n * 977 + d.turn), rows: list, titleColor: pal.ink2 })
     const ctxMeta = ctx === null ? '' : `${Math.round(ctx)}%`
     return (
       <Box flexDirection="column" backgroundColor={pal.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
         {rows >= 50 ? kit.crest(inner) : ''}
         <Box flexDirection="row">
+          {sealOn && Image !== undefined && d.sealFile != null ? (
+            <Box width={beside} paddingRight={1} flexShrink={0}>
+              <Image source={{ file: d.sealFile, format: 'png' }} columns={SEAL.columns} rows={SEAL.rows} alt="✠" />
+            </Box>
+          ) : (
+            ''
+          )}
           <Box flexDirection="column" width={inner - beside}>
             <Text color={pal.accent} bold wrap="truncate-end">
               {bannerLine(t, 'memory', inner - beside) ?? ''}
             </Text>
             {kit.strip(slate.strip.memory, `ход ${d.turn}`, inner - beside)}
             {kit.panel({ style: 'double', width: inner - beside, title: `✠ ${slate.memPlate}`, rows: heroRows })}
+            {reliquary(sec.sources, sourcesRows, 1, fmtTokens(memTotal), inner - beside)}
+            {reliquary(sec.cache, cacheRows, 2, hitRate === null ? '' : `${Math.round(hitRate)}%`, inner - beside)}
           </Box>
-          {sealOn && Image !== undefined && d.sealFile != null ? (
-            <Box width={beside} paddingLeft={1} flexShrink={0}>
-              <Image source={{ file: d.sealFile, format: 'png' }} columns={SEAL.columns} rows={SEAL.rows} alt="✠" />
-            </Box>
-          ) : (
-            ''
-          )}
         </Box>
-        {reliquary(sec.sources, sourcesRows, 1, fmtTokens(memTotal))}
-        {reliquary(sec.cache, cacheRows, 2, hitRate === null ? '' : `${Math.round(hitRate)}%`)}
         {reliquary(sec.search, searchRows, 3, `×${searches.length}`)}
         {reliquary(sec.turns, turnsRows, 4, String(d.turns.length))}
         {reliquary(sec.window, windowRows, 5, ctxMeta)}

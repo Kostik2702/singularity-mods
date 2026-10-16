@@ -32,7 +32,7 @@
     "puritySeal": {
       "type": "string",
       "title": "Печать чистоты",
-      "description": "Абсолютный путь к PNG печати чистоты (5 : 24), которую вкладка «Архивы» повесит сверху справа (Ghostty, kitty). Пусто — без неё. Ставит tools/install.mjs --purity-seal <url>.",
+      "description": "Абсолютный путь к PNG печати чистоты (5 : 24), которую вкладка «Архивы» повесит в левом верхнем углу (Ghostty, kitty). Пусто — без неё. Ставит tools/install.mjs --purity-seal <url>.",
       "default": ""
     }
   }

@@ -19,7 +19,7 @@
 //                                       and animated locally into terminal/art/servo-skull/,
 //                                       never committed; `--servo-skull none` brings the cog back
 //   node tools/install.mjs --purity-seal <url or file>
-//                                       a purity seal hanging at the top right of Архивы, cut
+//                                       a purity seal hanging in the top left corner of Архивы, cut
 //                                       out locally into terminal/art/purity-seal.png, never
 //                                       committed; `--purity-seal none` takes it down
 //   node tools/install.mjs --no-ghostty Claude Code only

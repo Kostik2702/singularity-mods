@@ -206,7 +206,7 @@ test('Обряды: without pictures the cog stays, whatever was chosen', SKULL_
   await ui.unmount()
 })
 
-test('Архивы: a chosen purity seal hangs at the head’s right, the dial making room', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
+test('Архивы: a chosen purity seal hangs in the top left corner, the head and two reliquaries beside it', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
   engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
   const ui = await $.ui.mount({
     plugin: 'mission-control',
@@ -217,8 +217,15 @@ test('Архивы: a chosen purity seal hangs at the head’s right, the dial m
   })
   const drawn = await ui.drawn()
   expect(JSON.stringify(drawn)).toContain('"file":"/Users/me/purity-seal.png"')
-  // The dial is narrower by the seal's 5 cells and a gap: its top edge ends 6 cells early.
-  const dial = screen(drawn).split('\n').find(row => row.includes('ПРИНЯТО ИЗ АРХИВОВ')) ?? ''
-  expect([...dial.replace(/▒+$/, '').trimEnd()].length).toBe(56 - 1 - 6)
+  const shown = screen(drawn).split('\n')
+  // The seal (painted ▒) opens the rows at the left; the dial and the first reliquaries close
+  // on the column's last cell beside it, and the later ones take the whole width.
+  const dial = shown.find(row => row.includes('ПРИНЯТО ИЗ АРХИВОВ')) ?? ''
+  expect(dial.startsWith(` ${'▒'.repeat(8)}`)).toBe(true)
+  for (const title of ['ПРИНЯТО ИЗ АРХИВОВ', 'ИСТОЧНИКИ', 'КЭШ КОГИТАТОРА', 'ПОИСК В АРХИВАХ']) {
+    const row = shown.find(r => r.includes(title)) ?? ''
+    expect([...row.trimEnd()].length).toBe(56 - 1)
+  }
+  expect(shown.find(r => r.includes('ПОИСК В АРХИВАХ'))?.startsWith(' ┌')).toBe(true)
   await ui.unmount()
 })
