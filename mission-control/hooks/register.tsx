@@ -92,13 +92,52 @@ let soundGain = 0
 /** Each job's status at the last look, to sound a rite's end once. */
 const riteStatus = new Map<string, string>()
 
+/**
+ * Where the sounds play: the engine's player (macOS, afplay), or one the mod runs itself
+ * where the engine has none (Windows: PowerShell's MediaPlayer; Linux: paplay or aplay).
+ * Found once as the session starts; null until then, and where nothing can play.
+ */
+let soundHost: 'engine' | 'windows' | 'linux' | null = null
+
+/** Which player this machine has: Windows by its OS variable, macOS or Linux by uname. */
+async function findSoundHost($: $): Promise<'engine' | 'windows' | 'linux' | null> {
+  try {
+    if ((await $.env.get('OS')) === 'Windows_NT') return 'windows'
+    const ran = await $.process.run(['uname', '-s'], { timeoutMs: 3000 })
+    return ran.stdout.trim() === 'Darwin' ? 'engine' : 'linux'
+  } catch {
+    return null
+  }
+}
+
+/** The absolute path of one of the mod's sounds ($.plugin.root may name .claude-plugin itself). */
+function soundFile($: $, name: string): string {
+  const root = $.plugin.root.replace(/[\\/]\.claude-plugin[\\/]?$/, '').replace(/[\\/]+$/, '')
+  return `${root}/sounds/${name}.wav`
+}
+
 /** Plays one of the slate's sounds (mission-control/sounds/<name>.wav); silent where it cannot. */
 async function chime($: $, name: 'awake' | 'vox' | 'servo' | 'rite-done' | 'heresy'): Promise<void> {
-  if (soundGain <= 0) return
+  if (soundGain <= 0 || soundHost === null) return
   try {
-    await $.audio.play({ asset: `sounds/${name}.wav` }, { gain: soundGain })
+    if (soundHost === 'engine') {
+      await $.audio.play({ asset: `sounds/${name}.wav` }, { gain: soundGain })
+      return
+    }
+    const file = soundFile($, name)
+    if (soundHost === 'windows') {
+      // MediaPlayer, unlike SoundPlayer, takes a volume; it plays while the script waits.
+      const script = `Add-Type -AssemblyName PresentationCore; $p = New-Object System.Windows.Media.MediaPlayer; $p.Open([uri]'${file.replace(/'/g, "''")}'); $p.Volume = ${soundGain}; $p.Play(); Start-Sleep -Milliseconds 1600`
+      await $.process.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 5000 })
+      return
+    }
+    try {
+      await $.process.run(['paplay', `--volume=${Math.round(soundGain * 65536)}`, file], { timeoutMs: 5000 })
+    } catch {
+      await $.process.run(['aplay', '-q', file], { timeoutMs: 5000 })
+    }
   } catch {
-    // no player here (Linux, Windows), or the clip could not play: the slate stays silent
+    // no player here, or the clip could not play: the slate stays silent
   }
 }
 
@@ -485,6 +524,7 @@ export const register: Register = (on, options) => {
       try {
         const began = await $.clock.now()
         markBoot(began)
+        if (soundGain > 0) soundHost = await findSoundHost($)
         void chime($, 'awake')
         const timer = $.clock.every(250, () => {
           $.ui.invalidate('ui.render')

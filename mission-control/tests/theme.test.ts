@@ -248,12 +248,21 @@ test('the classic look has no awakening', async ($, on) => {
 
 const SESSION_START = { cwd: '/proj', surface: 'terminal' as const, isInteractive: true }
 
-/** Records which of the plugin's clips play, answering beneath it as the player would. */
-function listen(on: Parameters<typeof engineBeneath>[0]): string[] {
+/**
+ * Records which of the plugin's clips play, answering beneath it as the player would: the
+ * engine's (macOS), or a process the mod runs where the engine has none. `uname` answers
+ * `system`; every other process run is recorded too.
+ */
+function listen(on: Parameters<typeof engineBeneath>[0], system = 'Darwin'): string[] {
   const played: string[] = []
   on('audio.play', (_$, e) => {
     played.push(JSON.stringify(e))
     return { value: undefined }
+  })
+  on('process.run', (_$, e) => {
+    const argv = e.argv
+    if (argv[0] !== 'uname') played.push(argv.join(' '))
+    return { value: { exitCode: 0, stdout: argv[0] === 'uname' ? `${system}\n` : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } as never }
   })
   return played
 }
@@ -285,4 +294,20 @@ test('sounds: the classic look is silent whatever the option', { options: { soun
   await $.session.start(SESSION_START)
   await $.turn.complete({ reason: 'end', answer: 'готово' } as never)
   expect(played).toEqual([])
+})
+
+test('sounds on Windows: the mod plays the clip through PowerShell, at the option’s volume', { options: { theme: 'warhammer', sound: 'quiet' } }, async ($, on) => {
+  engineBeneath(on, { env: { OS: 'Windows_NT' } })
+  const played = listen(on)
+  await $.session.start(SESSION_START)
+  const run = played.find(p => p.startsWith('powershell')) ?? ''
+  expect(run).toContain('sounds/awake.wav')
+  expect(run).toContain('$p.Volume = 0.35')
+})
+
+test('sounds on Linux: paplay at the option’s volume', { options: { theme: 'warhammer', sound: 'full' } }, async ($, on) => {
+  engineBeneath(on)
+  const played = listen(on, 'Linux')
+  await $.session.start(SESSION_START)
+  expect(played.some(p => p.startsWith('paplay --volume=65536') && p.endsWith('sounds/awake.wav'))).toBe(true)
 })
