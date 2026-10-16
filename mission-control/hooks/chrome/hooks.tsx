@@ -70,12 +70,12 @@ export function riteOf(tool: string): string {
 
 /**
  * What the engine drew, in a frame of the terminal's own (`double`, `bold` or `single`,
- * so it spans any height), with a name plate laid over its top edge, a stamp over its
- * bottom edge and a lamp over the engine's dot: absolutely placed Boxes, painted after
- * what they cover. The engine draws its dot (⏺ on macOS, ● elsewhere) in a two-cell
- * column of its own under a one-row margin, and its text from the third cell, so the
- * lamp at row 1, cell 0 of the body covers the dot, and lands in that empty column,
- * never on text, should a row come without the margin.
+ * so it spans any height), its name plate the frame's first row and a lamp laid over the
+ * engine's dot. An element placed over the frame's edge is clipped to the frame's inside
+ * (seen live 2026-10-16), so the plate is a row of its own. The engine draws its dot
+ * (⏺ on macOS, ● elsewhere) in a two-cell column under a one-row margin and its text
+ * from the third cell: under the plate the dot is the inside's row 2, cell 1, and a row
+ * without the margin puts the lamp in that empty column, never on text.
  */
 function framed(
   table: ElementTable,
@@ -84,8 +84,6 @@ function framed(
     color: string
     plate: string
     plateInk: string
-    stamp?: string
-    stampInk?: string
     lamp?: { glyph: string; color: string }
   },
   body: RenderElement,
@@ -94,29 +92,16 @@ function framed(
   const [open, close] = PLATE_ENDS[o.border]
   return (
     <Box flexDirection="column" borderStyle={o.border} borderColor={o.color} paddingX={1}>
-      <Box position="absolute" top={-1} left={1}>
-        <Text wrap="truncate-end">
-          <Text color={o.color}>{open}</Text>
-          <Text color={o.plateInk} bold>
-            {` ✠ ${o.plate} `}
-          </Text>
-          <Text color={o.color}>{close}</Text>
+      <Text wrap="truncate-end">
+        <Text color={o.color}>{open}</Text>
+        <Text color={o.plateInk} bold>
+          {` ✠ ${o.plate} `}
         </Text>
-      </Box>
-      {o.stamp !== undefined ? (
-        <Box position="absolute" bottom={-1} right={2}>
-          <Text wrap="truncate-end">
-            <Text color={o.color}>{open}</Text>
-            <Text color={o.stampInk ?? o.color}>{` ${o.stamp} `}</Text>
-            <Text color={o.color}>{close}</Text>
-          </Text>
-        </Box>
-      ) : (
-        ''
-      )}
+        <Text color={o.color}>{close}</Text>
+      </Text>
       {body}
       {o.lamp !== undefined ? (
-        <Box position="absolute" top={1} left={1}>
+        <Box position="absolute" top={2} left={1}>
           <Text color={o.lamp.color} bold>
             {o.lamp.glyph}
           </Text>
@@ -210,20 +195,20 @@ export function registerChrome(on: On, theme: Theme): void {
   }).catch(($, e, next) => next(e))
 
   // A reply block: its markdown marked with the slate's crosses, in a double brass frame
-  // under the plate «✠ ДОНЕСЕНИЕ», a stamp on its bottom edge. Each block (the text
+  // under the plate «✠ ДОНЕСЕНИЕ», a red lamp over the dot. Each block (the text
   // between two tool calls) is a dispatch of its own.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const body = await next({ ...e, props: { ...e.props, text: decorateMarkdown(e.props.text) } })
     return framed(
       $.ui.resolve(e),
-      { border: 'double', color: slate.frame, plate: slate.reply, plateInk: c.accent, stamp: '+++', stampInk: c.muted, lamp: { glyph: LAMP, color: c.critical } },
+      { border: 'double', color: slate.frame, plate: slate.reply, plateInk: c.accent, lamp: { glyph: LAMP, color: c.critical } },
       body,
     )
   }).catch(($, e, next) => next(e))
 
-  // A tool call is a rite: a thin brass frame, its kind on the plate, its state stamped
-  // below (✦ runs, ☩ done, † failed, ⊗ cut short); the accent while it runs, scarlet on failure.
+  // A tool call is a rite: a thin brass frame, its kind and state on the plate (✦ runs,
+  // ☩ done, † failed, ⊗ cut short); the accent while it runs, scarlet on failure.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const body = await next(e)
@@ -235,10 +220,8 @@ export function registerChrome(on: On, theme: Theme): void {
       {
         border: 'single',
         color,
-        plate: riteOf(p.tool),
+        plate: `${riteOf(p.tool)} ${mark}`,
         plateInk: p.isErrored ? c.critical : c.ink2,
-        stamp: mark,
-        stampInk: color === c.rule ? c.good : color,
         lamp: { glyph: LAMP, color: p.isRunning || p.isErrored ? c.critical : LAMP_COLD },
       },
       body,

@@ -121,7 +121,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float edge = min(min(fragCoord.x, res.x - fragCoord.x), min(fragCoord.y, res.y - fragCoord.y));
     vec3 col;
     if (edge < BEZEL) {
-        col = bezel(fragCoord, res);
+        // Ghostty's fragCoord grows downward (seen live 2026-10-16): the housing is drawn
+        // with y up, so its lower edge and its light from the upper left are where they read.
+        col = bezel(vec2(fragCoord.x, res.y - fragCoord.y), res);
     } else {
         col = glass(uv, fragCoord);
         // The housing's shadow falls on the glass.

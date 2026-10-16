@@ -98,10 +98,12 @@ export function engineBeneath(
     bash?: (input: Record<string, unknown>) => BashAnswer | Promise<BashAnswer>
     /** Tabs already open when the module (re)loads, by id and title. */
     panes?: { id: string; title: string }[]
+    /** The environment the plugin reads (TERM_PROGRAM and the like); empty by default. */
+    env?: Record<string, string>
   } = {},
 ) {
   const clock = mock.clock(on, { now: T0 })
-  mock.env(on, {})
+  mock.env(on, opts.env ?? {})
   // session.start and what it calls: the kit has no bottom for these.
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => {

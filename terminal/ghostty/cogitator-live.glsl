@@ -15,8 +15,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 col = texture(iChannel0, uv).rgb;
     float edge = min(min(fragCoord.x, res.x - fragCoord.x), min(fragCoord.y, res.y - fragCoord.y));
     if (edge >= BEZEL) {
-        // y grows upward: the band starts at the top and rolls down.
-        float pos = 1.0 - fract(iTime / BAND_PERIOD);
+        // Ghostty's fragCoord grows downward: the band starts at the top and rolls down.
+        float pos = fract(iTime / BAND_PERIOD);
         float d = uv.y - pos;
         float band = exp(-(d * d) / (BAND_HEIGHT * BAND_HEIGHT * 0.25));
         col += band * BAND_GAIN * vec3(1.0, 0.74, 0.34);

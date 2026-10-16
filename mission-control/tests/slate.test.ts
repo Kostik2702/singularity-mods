@@ -158,3 +158,12 @@ describe('the instrument block', () => {
     expect(binaryCant(30, 2).slice(0, 28)).toBe(binaryCant(30, 0).slice(2, 30))
   })
 })
+
+test('the pictured aquila keeps its shape: 54 cells across take 9 rows', WARHAMMER_OPTIONS, async ($, on) => {
+  engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+  const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+  const shown = screen(await ui.drawn()).split('\n')
+  const picture = shown.filter(row => row.includes('▒'.repeat(54)))
+  expect(picture.length).toBe(9)
+  await ui.unmount()
+})

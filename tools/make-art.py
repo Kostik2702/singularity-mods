@@ -1,8 +1,10 @@
 """Draw the slate's pixel art and embed it in the mod.
 
-The Agents tab of the warhammer theme shows a detailed Imperial aquila as a real
-picture where the terminal draws pictures (Ghostty, kitty): two heads, spread wings of
-layered feathers, a skull on the breast, gold over a dark outline. This draws it with
+The Agents tab of the warhammer theme shows the Imperial aquila as a real picture where
+the terminal draws pictures (Ghostty, kitty), drawn here in the emblem's own manner (our
+own drawing, not a copy of any artwork): two heads looking out on necks that curl over,
+level wings of straight feathers fanning down from the shoulder, a wedge of a breast, a
+tail fan and hooked talons, stencil gold over a dark outline. This draws it with
 Pillow, symmetric from its left half, writes terminal/art/aquila-crest.png and embeds
 it as base64 in mission-control/hooks/lib/art.ts, so the mod needs no file at run time.
 Usage: python tools/make-art.py   (from the repo root; needs Pillow)
@@ -15,16 +17,15 @@ import sys
 
 from PIL import Image, ImageDraw, ImageOps
 
-W, H = 432, 96          # 4.5 : 1, the box of 54 x 6 terminal cells (a cell is 1 : 2)
+W, H = 480, 160         # 3 : 1, the box of 54 x 9 terminal cells (a cell is 1 : 2)
 CX = W // 2
 SCALE = 3               # drawn large, then scaled down for smooth edges
 
-OUTLINE = (42, 26, 8, 255)
-GOLD_TOP = (255, 226, 140)
-GOLD_BOTTOM = (168, 112, 30)
-HIGHLIGHT = (255, 244, 200, 255)
-BONE = (236, 220, 180, 255)
-SOCKET = (24, 14, 5, 255)
+OUTLINE = (34, 20, 6, 255)
+GOLD_TOP = (255, 230, 150)
+GOLD_BOTTOM = (176, 116, 32)
+HIGHLIGHT = (255, 246, 210, 255)
+EYE = (20, 10, 4, 255)
 
 
 def gold(y: float) -> tuple[int, int, int, int]:
@@ -36,74 +37,63 @@ def s(points):
     return [(x * SCALE, y * SCALE) for x, y in points]
 
 
-def feather(draw: ImageDraw.ImageDraw, top: tuple[float, float], length: float, width: float, slant: float) -> None:
-    """A feather hanging from `top`, leaning out by `slant`, a rounded tip, a quill line."""
-    x, y = top
-    tip = (x - slant, y + length)
-    left = [(x - width / 2, y), (x + width / 2, y), (tip[0] + width * 0.18, tip[1] - width * 0.4), tip, (tip[0] - width * 0.3, tip[1] - width * 0.55)]
-    draw.polygon(s(left), fill=gold(y + length * 0.5), outline=OUTLINE, width=2 * SCALE)
-    draw.line(s([(x, y + 2), (tip[0] + width * 0.05, tip[1] - width * 0.5)]), fill=HIGHLIGHT, width=SCALE)
+def slab(draw: ImageDraw.ImageDraw, poly, y_mid: float) -> None:
+    """A gold slab with a dark outline and a lit upper edge: the stencil look of the emblem."""
+    draw.polygon(s(poly), fill=gold(y_mid), outline=OUTLINE, width=2 * SCALE)
+    draw.line(s([poly[0], poly[1]]), fill=HIGHLIGHT, width=SCALE)
 
 
-def wing_edge(t: float) -> tuple[float, float]:
-    """The wing's leading edge, an arch from the shoulder (t = 0) to the tip (t = 1)."""
-    x = CX - 20 - t * (CX - 34)
-    y = 30 - math.sin(t * math.pi * 0.62) * 24 + t * 6
-    return x, y
-
-
-def covert(draw: ImageDraw.ImageDraw, at: tuple[float, float], size: float) -> None:
-    """A short rounded covert feather, a scale of the wing's upper row."""
-    x, y = at
-    draw.pieslice(s([(x - size, y - size * 0.7), (x + size, y + size * 1.3)]), 20, 160, fill=gold(y), outline=OUTLINE, width=2 * SCALE)
+def bar(draw: ImageDraw.ImageDraw, start, angle: float, length: float, thick: float) -> None:
+    """A straight feather: a bar from `start`, `angle` degrees below the horizontal, going out
+    to the left, its outer end cut square to the wing's sweep."""
+    a = math.radians(angle)
+    dx, dy = -math.cos(a), math.sin(a)          # outward and down
+    nx, ny = -dy, dx                            # the bar's thickness, across it
+    x0, y0 = start
+    x1, y1 = x0 + dx * length, y0 + dy * length
+    h = thick / 2
+    poly = [(x0 + nx * h, y0 + ny * h), (x1 + nx * h, y1 + ny * h), (x1 - nx * h, y1 - ny * h), (x0 - nx * h, y0 - ny * h)]
+    # Upper edge first, so the highlight runs along the top of each feather.
+    slab(draw, [poly[3], poly[2], poly[1], poly[0]] if ny > 0 else poly, (y0 + y1) / 2)
 
 
 def left_half(img: Image.Image) -> None:
     draw = ImageDraw.Draw(img)
-    # Primaries: long feathers hung from the edge, overlapping, leaning out; drawn from
-    # the tip in, so the inner ones lie on top.
-    count = 13
+    # The wing: straight feathers fanning out from under the neck, the top one level and
+    # longest, each one below shorter and steeper; drawn bottom up, so the upper lie on top.
+    count = 9
     for i in reversed(range(count)):
-        t = i / (count - 1)
-        x, y = wing_edge(t * 0.97)
-        feather(draw, (x, y + 4), 50 - t * 30, 20 - t * 6, 6 + t * 18)
-    # Coverts: two rows of scales over the primaries' roots.
-    for row, (shift, size) in enumerate([(9, 7.5), (3, 6.0)]):
-        for k in range(14 - row * 3):
-            t = k / 13
-            x, y = wing_edge(t * 0.9)
-            covert(draw, (x - 2, y + shift), size - t * 2)
-    # The leading edge: a heavy gilt bar.
-    edge = [wing_edge(k / 30) for k in range(31)]
-    draw.line(s(edge), fill=OUTLINE, width=8 * SCALE, joint='curve')
-    draw.line(s(edge), fill=gold(8), width=5 * SCALE, joint='curve')
-    draw.line(s([(x, y - 1) for x, y in edge]), fill=HIGHLIGHT, width=SCALE)
-    # Tail feathers under the body, fanning down and out.
-    for k, slant in enumerate([3, 9, 15]):
-        feather(draw, (CX - 3 - k * 6, 68), 22 - k * 4, 9, slant)
-    # The neck, rising from the breast, and the head in profile looking out:
-    # an eye, a brow, a hooked beak.
-    draw.polygon(s([(CX - 2, 46), (CX - 13, 30), (CX - 16, 18), (CX - 8, 14), (CX - 1, 24)]), fill=gold(28), outline=OUTLINE, width=2 * SCALE)
-    hx, hy = CX - 17, 14
-    draw.ellipse(s([(hx - 9, hy - 6), (hx + 6, hy + 6)]), fill=gold(10), outline=OUTLINE, width=2 * SCALE)
-    beak = [(hx - 7, hy - 3), (hx - 19, hy - 1), (hx - 20, hy + 4), (hx - 16, hy + 2), (hx - 7, hy + 4)]
-    draw.polygon(s(beak), fill=gold(22), outline=OUTLINE, width=2 * SCALE)
-    draw.line(s([(hx - 8, hy - 4), (hx - 1, hy - 5)]), fill=OUTLINE, width=2 * SCALE)
-    draw.ellipse(s([(hx - 5, hy - 3), (hx - 2, hy)]), fill=SOCKET)
+        t = i / (count - 1)                      # 0 the top feather, 1 the lowest
+        start = (CX - 26 + t * 6, 34 + t * 46)
+        angle = 3 + t * 50
+        length = (CX - 36) * (1 - t * 0.6)
+        bar(draw, start, angle, length, 11 - t * 2)
+    # The neck: rising from the breast along its inner side, arching up and over toward
+    # the outside, where the head sits looking out.
+    box = [(CX - 50, 8), (CX - 6, 64)]
+    draw.arc(s(box), 270, 100, fill=OUTLINE, width=17 * SCALE)
+    draw.arc(s(box), 272, 98, fill=gold(30), width=12 * SCALE)
+    # The head at the top of the arch, facing out: a brow, a beak hooked down, an eye.
+    head = [(CX - 22, 4), (CX - 40, 4), (CX - 54, 10), (CX - 66, 18), (CX - 70, 30), (CX - 62, 24), (CX - 56, 30), (CX - 46, 20), (CX - 26, 20)]
+    slab(draw, head, 14)
+    draw.ellipse(s([(CX - 44, 8), (CX - 38, 14)]), fill=EYE)
+    # A talon: a leg down and out from the breast, three hooked claws.
+    slab(draw, [(CX - 16, 110), (CX - 6, 112), (CX - 24, 142), (CX - 34, 139)], 125)
+    for dx, dy in [(-16, 4), (-9, 13), (1, 14)]:
+        x0, y0 = CX - 29, 140
+        slab(draw, [(x0, y0 - 4), (x0 + dx, y0 + dy - 4), (x0 + dx + 4, y0 + dy + 2), (x0 + 4, y0 + 3)], 148)
+    # Tail feathers under the breast, fanning down between the talons.
+    for k, angle in enumerate([86, 74, 62]):
+        bar(draw, (CX - 2 - k * 4, 118), angle, 28 - k * 4, 6)
 
 
 def body(img: Image.Image) -> None:
     draw = ImageDraw.Draw(img)
-    # The breast: a gold shield, and on it a skull.
-    draw.polygon(s([(CX - 15, 38), (CX + 15, 38), (CX + 13, 66), (CX, 78), (CX - 13, 66)]), fill=gold(50), outline=OUTLINE, width=2 * SCALE)
-    sx, sy = CX, 55
-    draw.ellipse(s([(sx - 10, sy - 11), (sx + 10, sy + 7)]), fill=BONE, outline=OUTLINE, width=2 * SCALE)
-    draw.rectangle(s([(sx - 6, sy + 4), (sx + 6, sy + 12)]), fill=BONE, outline=OUTLINE, width=2 * SCALE)
-    for ex in (-5, 5):
-        draw.ellipse(s([(sx + ex - 3.5, sy - 4), (sx + ex + 3.5, sy + 2)]), fill=SOCKET)
-    draw.polygon(s([(sx - 1.5, sy + 3), (sx + 1.5, sy + 3), (sx, sy + 6)]), fill=SOCKET)
-    for tx in (-3, 0, 3):
-        draw.line(s([(sx + tx, sy + 8), (sx + tx, sy + 12)]), fill=SOCKET, width=SCALE)
+    # The breast: a long wedge pointing down, a ridge down its middle.
+    slab(draw, [(CX - 24, 40), (CX + 24, 40), (CX + 14, 104), (CX, 128), (CX - 14, 104)], 80)
+    draw.line(s([(CX, 46), (CX, 122)]), fill=OUTLINE, width=2 * SCALE)
+    # A gilt boss at the heart.
+    draw.ellipse(s([(CX - 7, 58), (CX + 7, 72)]), fill=gold(20), outline=OUTLINE, width=2 * SCALE)
 
 
 def main() -> int:
@@ -126,7 +116,7 @@ def main() -> int:
         '// Generated by tools/make-art.py: do not edit by hand, run it again.',
         '// The detailed aquila the warhammer Agents tab shows where the terminal draws pictures.',
         '',
-        f'/** {W} x {H} pixels, 4.5 : 1, for a box of 54 x 6 cells. */',
+        f'/** {W} x {H} pixels, 3 : 1, for a box of 54 x 9 cells. */',
         f'export const AQUILA_PNG_SIZE = {{ width: {W}, height: {H} }} as const',
         '',
         '/** The PNG, base64. */',
