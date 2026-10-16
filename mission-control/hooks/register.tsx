@@ -460,6 +460,9 @@ export const register: Register = (on, options) => {
   // A purity seal the person chose (tools/install.mjs --purity-seal): a PNG.
   const sealOpt = (options as Record<string, unknown> | undefined)?.puritySeal
   const sealFile = typeof sealOpt === 'string' && sealOpt.trim().length > 0 ? sealOpt.trim() : null
+  // The ranks' portraits the person chose (tools/install.mjs --portrait): a folder.
+  const portraitsOpt = (options as Record<string, unknown> | undefined)?.rankPortraits
+  const portraitsDir = typeof portraitsOpt === 'string' && portraitsOpt.trim().length > 0 ? portraitsOpt.trim() : null
 
   on('session.start', async ($, e, next) => {
     // The slate's awakening: the band plays the cogitator's boot for a few seconds, redrawn
@@ -690,7 +693,7 @@ export const register: Register = (on, options) => {
     return { result: JSON.stringify(state, null, 1) }
   })
 
-  registerMission(on, theme, crestFile)
+  registerMission(on, theme, crestFile, portraitsDir)
   registerMemory(on, theme, sealFile)
   registerJobs(on, theme, skullDir)
   registerChrome(on, theme)

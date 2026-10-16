@@ -48,7 +48,7 @@ export type Slate = {
    * Imperial ranks by agent type (its lower case): the title and the heraldic mark a card,
    * a feed line and a summoning rite show; a type with none shows as it came.
    */
-  ranks: Record<string, { title: string; icon: string }>
+  ranks: Record<string, { title: string; icon: string; slug: string }>
 }
 
 export type Theme = {
@@ -218,20 +218,20 @@ export const WARHAMMER: Theme = {
     hintWorking: '✠ обряд свершается',
     backgroundHint: 'отослать обряд в фон',
     ranks: {
-      investigator: { title: 'Инквизитор', icon: 'ℑ' },
-      critic: { title: 'Комиссар', icon: '★' },
-      reviewer: { title: 'Комиссар', icon: '★' },
-      validator: { title: 'Арбитр', icon: '§' },
-      historian: { title: 'Летописец', icon: '✎' },
-      explore: { title: 'Скаут', icon: '⌖' },
-      plan: { title: 'Стратег', icon: '♜' },
-      coder: { title: 'Техножрец', icon: '⌬' },
-      'web-implementer': { title: 'Техножрец', icon: '⌬' },
-      'web-viewer': { title: 'Авгур', icon: '◎' },
-      'general-purpose': { title: 'Гвардеец', icon: '✦' },
-      claude: { title: 'Гвардеец', icon: '✦' },
-      'claude-code-guide': { title: 'Магос', icon: '⌬' },
-      'statusline-setup': { title: 'Сервитор', icon: '⚬' },
+      investigator: { title: 'Инквизитор', icon: 'ℑ', slug: 'inquisitor' },
+      critic: { title: 'Комиссар', icon: '★', slug: 'commissar' },
+      reviewer: { title: 'Комиссар', icon: '★', slug: 'commissar' },
+      validator: { title: 'Арбитр', icon: '§', slug: 'arbitrator' },
+      historian: { title: 'Летописец', icon: '✎', slug: 'chronicler' },
+      explore: { title: 'Скаут', icon: '⌖', slug: 'scout' },
+      plan: { title: 'Стратег', icon: '♜', slug: 'strategist' },
+      coder: { title: 'Техножрец', icon: '⌬', slug: 'techpriest' },
+      'web-implementer': { title: 'Техножрец', icon: '⌬', slug: 'techpriest' },
+      'web-viewer': { title: 'Авгур', icon: '◎', slug: 'augur' },
+      'general-purpose': { title: 'Гвардеец', icon: '✦', slug: 'guardsman' },
+      claude: { title: 'Гвардеец', icon: '✦', slug: 'guardsman' },
+      'claude-code-guide': { title: 'Магос', icon: '⌬', slug: 'magos' },
+      'statusline-setup': { title: 'Сервитор', icon: '⚬', slug: 'servitor' },
     },
   },
   colors: {
@@ -336,7 +336,7 @@ export function forSurface(theme: Theme, surface: string): Theme {
 }
 
 /** An agent type's Imperial rank in a slate, or null: a type with none shows as it came. */
-export function rankOf(t: Theme, type: string): { title: string; icon: string } | null {
+export function rankOf(t: Theme, type: string): { title: string; icon: string; slug: string } | null {
   const ranks = t.slate?.ranks
   if (ranks === undefined) return null
   const key = type.toLowerCase()

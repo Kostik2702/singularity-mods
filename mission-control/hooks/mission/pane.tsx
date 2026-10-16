@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
-import { COG, cells, isWarped, slateKit, stamp } from '../lib/frame'
+import { COG, PORTRAIT, cells, isWarped, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
 import { thoughtFor } from '../lib/thoughts'
 import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
@@ -29,6 +29,8 @@ export type AgentsPaneData = {
   crestFile?: string | null
   /** How full the context is (percent): past WARP_AT the slate shows the warp's taint. */
   contextPercent?: number | null
+  /** Ranks' portraits found (the `rankPortraits` option) by slug, `magister` for main; pictures only. */
+  portraits?: Record<string, string>
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -517,6 +519,31 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     }
     if (row.intent !== null) lines.push(...whyRows(table, t, '', isMain && !working ? w.outcome : w.why, row.intent, body))
     if (working) lines.push(nowRow(table, t, d, '', row))
+    // A rank's portrait, where one was chosen: it hangs on the tree's branch before the card.
+    const slug = isMain ? 'magister' : (rankOf(t, row.type)?.slug ?? null)
+    const portrait = slug === null ? undefined : d.portraits?.[slug]
+    const { Image } = table as Partial<ElementTable<'terminal'>>
+    if (portrait !== undefined && Image !== undefined && width - PORTRAIT.columns - 1 >= 24) {
+      const card = kit.panel({
+        style: isMain ? 'double' : 'heavy',
+        width: width - PORTRAIT.columns - 1,
+        title: `${isMain ? '✠ ' : viewed ? `${t.icons.viewed} ` : rankIcon(row, t) !== null ? `${rankIcon(row, t)} ` : ''}${agentName(row, t).toUpperCase()}`,
+        meta,
+        rows: lines,
+        titleColor: isMain ? c.accent : c.ink,
+      })
+      const leads = card.map((_, i) => (isMain ? '' : i === 0 ? lead : pad))
+      out.push(
+        <Box flexDirection="row">
+          {isMain ? '' : <Box flexDirection="column">{leads.map(l => <Text color={c.muted}>{l}</Text>)}</Box>}
+          <Box width={PORTRAIT.columns + 1} flexShrink={0}>
+            <Image source={{ file: portrait, format: 'png' }} columns={PORTRAIT.columns} rows={PORTRAIT.rows} alt={rankIcon(row, t) ?? '✠'} />
+          </Box>
+          <Box flexDirection="column">{card}</Box>
+        </Box>,
+      )
+      taller += card.length - 1
+    } else
     out.push(
       ...kit.panel({
         style: isMain ? 'double' : 'heavy',

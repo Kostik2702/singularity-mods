@@ -146,6 +146,9 @@ export function skullFrame(dir: string, now: number): string {
   return `${dir.replace(/[\\/]+$/, '')}/frame-${String(k).padStart(2, '0')}.png`
 }
 
+/** A rank's portrait on Легион: a square picture in a box of 6 x 3 cells, a cell's gap after it. */
+export const PORTRAIT = { columns: 6, rows: 3 } as const
+
 /** A purity seal's picture is 5 wide to 24 tall; the Archives tab sizes its box to the blocks beside it. */
 export const SEAL_ASPECT = { width: 5, height: 24 } as const
 

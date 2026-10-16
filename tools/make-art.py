@@ -25,6 +25,10 @@ Usage: python tools/make-art.py   (from the repo root; needs Pillow)
   python tools/make-art.py --seal <cut-out PNG> [--out <png>]
     A purity seal for the Archives tab from a picture already cut out: cropped and padded
     to 5 : 24 (a box of 5 x 12 cells), terminal/art/purity-seal.png by default, git-ignored.
+
+  python tools/make-art.py --portrait <cut-out PNG> --out <png>
+    A rank's portrait for Легион from a picture already cut out: cropped to its subject and
+    padded square (192 x 192, a box of 6 x 3 cells), into terminal/art/portraits/, git-ignored.
 """
 import base64
 import io
@@ -227,7 +231,30 @@ def seal(source: str, out: str) -> int:
     return 0
 
 
+PORTRAIT_SIZE = 192
+
+
+def portrait(source: str, out: str) -> int:
+    """A rank's portrait: the subject cropped, centred on a transparent square."""
+    img = Image.open(source).convert('RGBA')
+    box = img.getchannel('A').point(lambda v: 255 if v > 24 else 0).getbbox()
+    if box is None:
+        print('make-art: the picture has no opaque subject (cut it out first)', file=sys.stderr)
+        return 1
+    img = img.crop(box)
+    scale = PORTRAIT_SIZE / max(img.width, img.height)
+    img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    canvas = Image.new('RGBA', (PORTRAIT_SIZE, PORTRAIT_SIZE), (0, 0, 0, 0))
+    canvas.alpha_composite(img, ((PORTRAIT_SIZE - img.width) // 2, (PORTRAIT_SIZE - img.height) // 2))
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    canvas.save(out, optimize=True)
+    print(os.path.abspath(out), canvas.size)
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) >= 5 and sys.argv[1] == '--portrait' and sys.argv[3] == '--out':
+        return portrait(sys.argv[2], sys.argv[4])
     if len(sys.argv) >= 3 and sys.argv[1] == '--seal':
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out' else os.path.join(root, 'terminal', 'art', 'purity-seal.png')

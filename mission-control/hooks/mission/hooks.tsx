@@ -4,7 +4,7 @@ import type { On, TurnStepResult } from 'claude-code'
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import { describeAction, launchedVerb } from '../lib/actions'
-import { drawsPictures } from '../lib/terminal'
+import { drawsPictures, listPortraits } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
@@ -32,7 +32,7 @@ function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function registerMission(on: On, theme: Theme, crestFile: string | null = null): void {
+export function registerMission(on: On, theme: Theme, crestFile: string | null = null, portraitsDir: string | null = null): void {
   const c = theme.colors
   on('turn.start', async ($, e, next) => {
     const res = await next(e)
@@ -131,6 +131,7 @@ export function registerMission(on: On, theme: Theme, crestFile: string | null =
       jobsRunning: runningShown(await read($, jobsA), now).length,
       pictures: await drawsPictures($),
       crestFile,
+      portraits: portraitsDir !== null && (await drawsPictures($)) ? await listPortraits($, portraitsDir) : {},
       contextPercent: (await read($, usageA))?.percent ?? null,
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))

@@ -45,6 +45,12 @@
         "full"
       ],
       "default": "quiet"
+    },
+    "rankPortraits": {
+      "type": "string",
+      "title": "Портреты чинов",
+      "description": "Абсолютный путь к папке портретов чинов (<чин>.png: inquisitor, techpriest, commissar, arbitrator, chronicler, scout, strategist, augur, guardsman, magos, servitor; magister — главный), которые «Легион» повесит на ветке перед карточкой (Ghostty, kitty). Ставит tools/install.mjs --portrait <чин>=<url>.",
+      "default": ""
     }
   }
 }

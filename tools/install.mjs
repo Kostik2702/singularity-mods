@@ -22,6 +22,13 @@
 //                                       a purity seal hanging in the top left corner of Архивы, cut
 //                                       out locally into terminal/art/purity-seal.png, never
 //                                       committed; `--purity-seal none` takes it down
+//   node tools/install.mjs --portrait <rank>=<url or file>   (repeatable)
+//                                       a rank's portrait on Легион, hung before its agents'
+//                                       cards: inquisitor, techpriest, commissar, arbitrator,
+//                                       chronicler, scout, strategist, augur, guardsman, magos,
+//                                       servitor, magister (main); cut out locally into
+//                                       terminal/art/portraits/, never committed; <rank>=none
+//                                       takes one down
 //   node tools/install.mjs --no-ghostty Claude Code only
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
@@ -70,6 +77,9 @@ const SKULL_DIR = path.join(ROOT, 'terminal', 'art', 'servo-skull')
 const sealAt = argv.indexOf('--purity-seal')
 const sealSource = sealAt >= 0 ? (argv[sealAt + 1] ?? '') : null
 const SEAL_FILE = path.join(ROOT, 'terminal', 'art', 'purity-seal.png')
+const PORTRAITS_DIR = path.join(ROOT, 'terminal', 'art', 'portraits')
+const RANKS = ['inquisitor', 'techpriest', 'commissar', 'arbitrator', 'chronicler', 'scout', 'strategist', 'augur', 'guardsman', 'magos', 'servitor', 'magister']
+const portraitArgs = argv.flatMap((a, i) => (a === '--portrait' && argv[i + 1] !== undefined ? [argv[i + 1]] : []))
 const said = []
 
 function say(line) {
@@ -216,6 +226,38 @@ async function sealPicture() {
   return SEAL_FILE
 }
 
+/**
+ * The ranks' portraits: each `--portrait <rank>=<source>` cut out now (or taken down with
+ * `none`); the folder when it holds any, else null.
+ */
+async function rankPortraits() {
+  for (const arg of portraitArgs) {
+    const at = arg.indexOf('=')
+    const rank = at > 0 ? arg.slice(0, at) : ''
+    const source = at > 0 ? arg.slice(at + 1) : ''
+    if (!RANKS.includes(rank)) throw new Error(`--portrait ${arg}: чин один из ${RANKS.join(', ')}`)
+    const file = path.join(PORTRAITS_DIR, `${rank}.png`)
+    if (source === '' || source === 'none') {
+      if (!isDry && fs.existsSync(file)) fs.rmSync(file)
+      say(`Портрет ${rank}: снят`)
+      continue
+    }
+    const py = pythonWithPillow()
+    if (py === null) throw new Error('для --portrait нужен Python 3 с Pillow: python3 -m pip install pillow (или укажи PYTHON=<путь>)')
+    say(`Портрет ${rank}: вырезаю ${source}`)
+    if (isDry) continue
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'portrait-'))
+    try {
+      const cut = cutOut(await pictureAsPng(source, work, py), work)
+      execFileSync(py, [path.join(ROOT, 'tools', 'make-art.py'), '--portrait', cut, '--out', file], { stdio: 'inherit' })
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true })
+    }
+  }
+  const any = fs.existsSync(PORTRAITS_DIR) && fs.readdirSync(PORTRAITS_DIR).some(f => f.endsWith('.png'))
+  return any ? PORTRAITS_DIR : null
+}
+
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
 function claudeDir() {
@@ -230,7 +272,7 @@ function pluginDirs(value) {
     .filter(s => s.length > 0)
 }
 
-function setupClaude(crest, skull, sealFile) {
+function setupClaude(crest, skull, sealFile, portraits) {
   const dir = claudeDir()
   const file = path.join(dir, 'settings.json')
   const statePath = path.join(dir, 'singularity-mods.install.json')
@@ -266,6 +308,7 @@ function setupClaude(crest, skull, sealFile) {
     if (opts !== undefined && 'aquilaImage' in opts) delete opts.aquilaImage
     if (opts !== undefined && 'servoSkull' in opts) delete opts.servoSkull
     if (opts !== undefined && 'puritySeal' in opts) delete opts.puritySeal
+    if (opts !== undefined && 'rankPortraits' in opts) delete opts.rankPortraits
     write(file, `${JSON.stringify(settings, null, 2)}\n`)
     if (!isDry && fs.existsSync(statePath)) fs.rmSync(statePath)
     return
@@ -296,6 +339,10 @@ function setupClaude(crest, skull, sealFile) {
     settings.pluginConfigs['mission-control'].options.puritySeal = sealFile
     say(`  mission-control: puritySeal = ${sealFile}`)
   } else delete settings.pluginConfigs['mission-control'].options.puritySeal
+  if (portraits !== null) {
+    settings.pluginConfigs['mission-control'].options.rankPortraits = portraits
+    say(`  mission-control: rankPortraits = ${portraits}`)
+  } else delete settings.pluginConfigs['mission-control'].options.rankPortraits
 
   if (settings.theme !== CLAUDE_THEME) state.previousTheme = settings.theme ?? null
   settings.theme = CLAUDE_THEME
@@ -405,7 +452,12 @@ function setupGhostty() {
 
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
-  setupClaude(isUninstall ? null : crestPicture(), isUninstall ? null : await skullFrames(), isUninstall ? null : await sealPicture())
+  setupClaude(
+    isUninstall ? null : crestPicture(),
+    isUninstall ? null : await skullFrames(),
+    isUninstall ? null : await sealPicture(),
+    isUninstall ? null : await rankPortraits(),
+  )
   if (withGhostty) setupGhostty()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')
