@@ -1,5 +1,8 @@
 import type { ElementTable } from 'claude-code'
 
+import { AQUILA_PNG, AQUILA_PNG_SIZE } from './art'
+import { cogCells, hex } from './cog'
+import type { CogPalette } from './cog'
 import type { Slate, Theme } from './theme'
 
 // The parts of a data-slate: framed panels with name plates, the crest, the status
@@ -131,6 +134,50 @@ export function crestLines(width: number): string[] | null {
   return CREST.map(row => ' '.repeat(left) + row.padEnd(across) + ' '.repeat(width - left - across))
 }
 
+/** The cog on the Agents tab: its Raster's key and box, turned a little more each frame while agents work. */
+export const COG = { key: 'cog', columns: 10, rows: 5 } as const
+
+/** Radians the cog has turned at `now`: a slow, steady turn, the same on every redraw and blit. */
+export function cogAngle(now: number): number {
+  return ((now / 1000) * 1.7) % (Math.PI * 2)
+}
+
+/** The cog in the slate's brass, its hub the red eye of the Omnissiah. */
+export function cogPalette(t: Theme, slate: Slate): CogPalette {
+  return { light: hex(t.colors.accent), mid: hex(slate.frame), dark: hex(t.colors.track), hub: hex(t.colors.critical) }
+}
+
+const CANT_SOURCE = 'ОМНИССИЯ ВИДИТ ДУХ МАШИНЫ БДИТ ПЛОТЬ СЛАБА'
+
+/**
+ * A strip of binaric cant `width` cells long: bytes of a litany as eight-bit groups,
+ * a cross between every few, shifted by `offset` cells so it crawls as time passes.
+ */
+export function binaryCant(width: number, offset: number): string {
+  const groups: string[] = []
+  for (const ch of CANT_SOURCE) groups.push(((ch.codePointAt(0) ?? 0) & 0xff).toString(2).padStart(8, '0'))
+  const tape = groups.map((g, i) => (i % 4 === 3 ? `${g} ✠ ` : `${g} `)).join('')
+  const loop = [...tape]
+  const start = ((Math.floor(offset) % loop.length) + loop.length) % loop.length
+  let out = ''
+  for (let i = 0; i < width; i += 1) out += loop[(start + i) % loop.length] ?? ' '
+  return out
+}
+
+/**
+ * The date as the Imperium writes it: a check number, the part of the year passed in
+ * thousandths, the year of the millennium, the millennium. 2026-10-16 is «0 789 026.M3».
+ */
+export function imperialDate(now: number): string {
+  const d = new Date(now)
+  const year = d.getUTCFullYear()
+  const start = Date.UTC(year, 0, 1)
+  const length = Date.UTC(year + 1, 0, 1) - start
+  const part = Math.min(999, Math.floor(((now - start) / length) * 1000))
+  const millennium = Math.floor(year / 1000) + 1
+  return `0 ${String(part).padStart(3, '0')} ${String(year % 1000).padStart(3, '0')}.M${millennium}`
+}
+
 /** A reference stamp for a panel's bottom edge: four hex digits from `seed`, as a cogitator numbers its records. */
 export function stamp(prefix: string, seed: number): string {
   const n = Math.abs(Math.floor(seed * 2654435761) % 0x10000)
@@ -254,5 +301,77 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     </Text>
   )
 
-  return { panel, crest, strip, gauge, keys, edge }
+  // A terminal's table has Raster and Image; any other surface never draws a slate.
+  const term = table as Partial<ElementTable<'terminal'>>
+
+  /** The turning cog at `angle`, or null where the surface has no Raster. */
+  const cog = (angle: number): JSX.Element | null => {
+    const { Raster } = term
+    if (Raster === undefined) return null
+    return <Raster key={COG.key} columns={COG.columns} rows={COG.rows} cells={cogCells(COG.columns, COG.rows, angle, cogPalette(t, slate))} />
+  }
+
+  /**
+   * The detailed aquila as a picture `width` cells across (rows to keep its 4.5 : 1),
+   * or null where the surface has no Image. Only where the terminal draws pictures:
+   * elsewhere an Image draws its `alt`, so the caller keeps the block crest there.
+   */
+  const aquila = (width: number): { element: JSX.Element; rows: number } | null => {
+    const { Image } = term
+    if (Image === undefined) return null
+    const rows = Math.max(3, Math.round((width * AQUILA_PNG_SIZE.height * 2) / AQUILA_PNG_SIZE.width))
+    return { element: <Image source={{ png: AQUILA_PNG }} columns={width} rows={rows} alt="✠ аквила Империума ✠" />, rows }
+  }
+
+  /**
+   * The instrument block of a tab's head: the cog (turning while `awake`) beside the
+   * litany, the inverse status strip, a lamp with the machine's state, the crawling
+   * binaric cant and the Imperial date. Null where the column is too narrow or the
+   * surface has no Raster; the caller then draws the litany and the strip alone.
+   * Takes COG.rows screen rows.
+   */
+  const instruments = (o: {
+    width: number
+    now: number
+    litany: string | null
+    strip: readonly [string, string]
+    state: { label: string; awake: string; asleep: string }
+    awake: boolean
+  }): JSX.Element | null => {
+    const wheel = o.width >= 44 ? cog(cogAngle(o.now)) : null
+    if (wheel === null) return null
+    const side = o.width - COG.columns - 1
+    const second = Math.floor(o.now / 1000)
+    return (
+      <Box flexDirection="row">
+        <Box width={COG.columns + 1} flexShrink={0}>
+          {wheel}
+        </Box>
+        <Box flexDirection="column" width={side}>
+          <Text color={c.accent} bold wrap="truncate-end">
+            {o.litany ?? ''}
+          </Text>
+          {strip(o.strip[0], o.strip[1], side)}
+          <Text wrap="truncate-end">
+            <Text color={o.awake ? c.critical : c.muted} bold>
+              {o.awake && second % 2 === 0 ? '◉' : '○'}{' '}
+            </Text>
+            <Text color={c.muted}>{o.state.label} ▸ </Text>
+            <Text color={o.awake ? c.accent : c.muted} bold={o.awake}>
+              {o.awake ? o.state.awake : o.state.asleep}
+            </Text>
+          </Text>
+          <Text color={c.rule} wrap="truncate-end">
+            {binaryCant(side, o.awake ? second * 2 : 0)}
+          </Text>
+          <Text wrap="truncate-end">
+            <Text color={c.muted}>ДАТА ИМПЕРИИ </Text>
+            <Text color={c.ink2}>{imperialDate(o.now)}</Text>
+          </Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  return { panel, crest, strip, gauge, keys, edge, cog, aquila, instruments }
 }

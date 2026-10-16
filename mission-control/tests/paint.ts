@@ -24,12 +24,34 @@ function pad(line: string, width: number, clips: boolean): string {
   return line + ' '.repeat(width - n)
 }
 
+/** A Raster's cells as the glyphs they hold, row by row (colours dropped). */
+function rasterRows(p: Record<string, unknown>): string[] {
+  const columns = num(p.columns)
+  const rows = num(p.rows)
+  const bin = atob(String(p.cells ?? ''))
+  const word = (i: number): number =>
+    (bin.charCodeAt(i * 4) | (bin.charCodeAt(i * 4 + 1) << 8) | (bin.charCodeAt(i * 4 + 2) << 16) | (bin.charCodeAt(i * 4 + 3) << 24)) >>> 0
+  const out: string[] = []
+  for (let r = 0; r < rows; r += 1) {
+    let line = ''
+    for (let c = 0; c < columns; c += 1) line += String.fromCodePoint(word((r * columns + c) * 3))
+    out.push(line)
+  }
+  return out
+}
+
 /** The rows a node paints, each a string of cells. */
 export function paint(node: RenderNode): string[] {
   if (typeof node === 'string') return [node]
   const n = node as Node
   if (n.type === 'Text') return [text(n)]
   if (n.type === 'engine') return ['<engine>']
+  if (n.type === 'Raster') return rasterRows(n.props ?? {})
+  if (n.type === 'Image') {
+    const p = n.props ?? {}
+    const columns = num(p.columns)
+    return Array.from({ length: num(p.rows) }, () => '▒'.repeat(columns))
+  }
   if (n.type !== 'Box') return [`<${n.type}>`]
   const p = n.props ?? {}
   if (p.display === 'none') return []

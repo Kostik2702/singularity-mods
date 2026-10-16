@@ -16,11 +16,13 @@ import {
 } from './jobs/model'
 import type { OutputRead } from './jobs/model'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
+import { cogCells } from './lib/cog'
+import { COG, cogAngle, cogPalette } from './lib/frame'
 import { countDoctor } from './lib/parse'
 import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
-import { applyComplete, applyList, clearEnded, needsReconcile, needsTick } from './mission/model'
+import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
 import { registerChrome } from './chrome/hooks'
 
@@ -39,6 +41,10 @@ const JOBS_DIR_RETRY_MS = 30_000
 const ALERTS_EVERY_MS = 5 * 60_000
 /** Timers on the Agents tab are redrawn once a second, and only while something works. */
 const TICK_MS = 1000
+/** The slate's cog turns at eight frames a second while an agent works. */
+const COG_MS = 125
+/** After a blit the engine refused (the tab not on screen), the cog waits this long. */
+const COG_REST_MS = 5000
 /** The engine's own agent list is read every 2 s, and only while a subagent works. */
 const LIST_MS = 2000
 
@@ -67,6 +73,8 @@ type $ = EngineInterface
 
 /** When the tasks folder was last looked for: a module variable, a reload looks again at once. */
 let jobsDirTriedAt = Number.NEGATIVE_INFINITY
+/** Until when the cog rests after a refused blit: a module variable, a reload tries at once. */
+let cogRestsUntil = Number.NEGATIVE_INFINITY
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -322,6 +330,37 @@ async function pollJobs($: $, theme: Theme): Promise<void> {
   }
 }
 
+/**
+ * Turns the slate's cogs by one frame while work goes on: a blit of each tab's Raster,
+ * no redraw. The angle comes from the clock, so a redraw draws a cog where the blits
+ * left it. When no cog took the frame (the tabs closed or hidden), they rest a while.
+ */
+async function turnCog($: $, theme: Theme): Promise<void> {
+  try {
+    const slate = theme.slate
+    if (slate === null) return
+    const now = await $.clock.now()
+    if (now < cogRestsUntil) return
+    // Each tab's cog turns while its own work goes on: agents on Легион, rites on Обряды.
+    const agentsAwake = (await read($, agentsA)).some(r => isWorking(r.phase))
+    const forgeAwake = (await read($, jobsA)).some(j => j.status === 'run')
+    if (!agentsAwake && !forgeAwake) return
+    const cells = cogCells(COG.columns, COG.rows, cogAngle(now), cogPalette(theme, slate))
+    let shown = false
+    for (const [pane, awake] of [
+      [AGENTS_PANE, agentsAwake],
+      [JOBS_PANE, forgeAwake],
+    ] as const) {
+      if (!awake) continue
+      const res = await $.ui.blit({ requestId: pane, key: COG.key, cells })
+      if (res.deny === undefined) shown = true
+    }
+    if (!shown) cogRestsUntil = now + COG_REST_MS
+  } catch {
+    // no surface bound, or the tab drawn without a cog: the next frame tries again
+  }
+}
+
 /** Redraws while something works, so the Agents tab's timers stay true; does nothing when all is quiet. */
 async function tick($: $): Promise<void> {
   try {
@@ -398,6 +437,7 @@ export const register: Register = (on, options) => {
       },
       async () => {
         $.clock.every(TICK_MS, () => void tick($))
+        if (theme.slate !== null) $.clock.every(COG_MS, () => void turnCog($, theme))
         $.clock.every(LIST_MS, () => void reconcile($, false))
         // A reload (or the mod set up mid-session) finds agents already at work: learn them now.
         await reconcile($, true)

@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { On, TurnStepResult } from 'claude-code'
+import type { EngineInterface, On, TurnStepResult } from 'claude-code'
 
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
@@ -28,6 +28,19 @@ const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * Whether the terminal draws pictures (kitty graphics: Ghostty and kitty); anywhere else
+ * an Image draws its alt, so the slate keeps its block crest. False when the environment
+ * cannot be read. Top level: the engine follows `$` only into such a function.
+ */
+async function drawsPictures($: EngineInterface): Promise<boolean> {
+  try {
+    return /ghostty|kitty/i.test(`${(await $.env.get('TERM_PROGRAM')) ?? ''} ${(await $.env.get('TERM')) ?? ''}`)
+  } catch {
+    return false
+  }
 }
 
 export function registerMission(on: On, theme: Theme): void {
@@ -127,6 +140,7 @@ export function registerMission(on: On, theme: Theme): void {
       now,
       viewAgentId: e.props.view.agentId ?? null,
       jobsRunning: runningShown(await read($, jobsA), now).length,
+      pictures: await drawsPictures($),
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {

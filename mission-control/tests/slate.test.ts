@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { CREST, cells, crestLines, edgeBottom, edgeTop, wrapLines } from '../hooks/lib/frame'
+import { cogCells } from '../hooks/lib/cog'
+import { CREST, binaryCant, cells, crestLines, edgeBottom, edgeTop, imperialDate, wrapLines } from '../hooks/lib/frame'
 import type { FrameStyle } from '../hooks/lib/frame'
 import { TASKS_DIR, engineBeneath, fakeFs, mountAgents, mountJobs, spawn, step, submit, toolCall } from './helpers'
 import { screen } from './paint'
@@ -126,4 +127,34 @@ test('the Memory slate: the dial and every reliquary close on the column’s las
     expect(shown).toContain('┤ ПРЕДЕЛ ├')
     await ui.unmount()
   }
+})
+
+describe('the instrument block', () => {
+  const PAL = { light: 0xffd27a, mid: 0xa8823c, dark: 0x2a1d0c, hub: 0xf03a2e }
+  const decode = (b64: string): number[] => {
+    const bin = atob(b64)
+    const out: number[] = []
+    for (let i = 0; i < bin.length; i += 4) out.push((bin.charCodeAt(i) | (bin.charCodeAt(i + 1) << 8) | (bin.charCodeAt(i + 2) << 16) | (bin.charCodeAt(i + 3) << 24)) >>> 0)
+    return out
+  }
+
+  test('a cog frame fills its box, one narrow glyph a cell, and turns between frames', () => {
+    const words = decode(cogCells(10, 5, 0, PAL))
+    expect(words.length).toBe(10 * 5 * 3)
+    for (let i = 0; i < words.length; i += 3) expect([0x20, 0x2580, 0x2584]).toContain(words[i])
+    expect(words.some((w, i) => i % 3 === 0 && w !== 0x20)).toBe(true)
+    expect(cogCells(10, 5, 0.3, PAL)).not.toBe(cogCells(10, 5, 0, PAL))
+  })
+
+  test('the Imperial date: check number, thousandths of the year, year, millennium', () => {
+    expect(imperialDate(Date.UTC(2026, 9, 16, 12))).toBe('0 790 026.M3')
+    expect(imperialDate(Date.UTC(2026, 0, 1))).toBe('0 000 026.M3')
+    expect(imperialDate(Date.UTC(2999, 11, 31, 23))).toMatch(/^0 999 999\.M3$/)
+  })
+
+  test('the binaric cant is exactly as wide as asked and crawls with its offset', () => {
+    for (const width of [1, 17, 44]) expect(cells(binaryCant(width, 0))).toBe(width)
+    expect(binaryCant(30, 2)).not.toBe(binaryCant(30, 0))
+    expect(binaryCant(30, 2).slice(0, 28)).toBe(binaryCant(30, 0).slice(2, 30))
+  })
 })

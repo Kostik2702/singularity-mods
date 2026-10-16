@@ -5,6 +5,9 @@
 // housing shader, aquila). Idempotent: run it again after a move or a pull.
 //
 //   node tools/install.mjs              install everything
+//   node tools/install.mjs --animated   also the living screen: a rolling refresh band,
+//                                       breathing phosphor (Ghostty then redraws all the time)
+//   node tools/install.mjs --static     back to the still screen (the default)
 //   node tools/install.mjs --no-ghostty Claude Code only
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
@@ -38,6 +41,8 @@ const args = new Set(process.argv.slice(2))
 const isDry = args.has('--dry-run')
 const isUninstall = args.has('--uninstall')
 const withGhostty = !args.has('--no-ghostty')
+// --animated / --static choose; neither keeps what the block already says.
+const animatedFlag = args.has('--animated') ? true : args.has('--static') ? false : null
 const said = []
 
 function say(line) {
@@ -189,6 +194,8 @@ function setupGhostty() {
   say(`Ghostty: ${file}`)
   const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
   if (before.length > 0) backup(file)
+  const wasAnimated = before.includes('cogitator-live.glsl')
+  const animated = animatedFlag ?? wasAnimated
   let text = withoutOurs(before)
   if (!isUninstall) {
     text += [
@@ -196,6 +203,8 @@ function setupGhostty() {
       BLOCK_START,
       '# Managed by singularity-mods tools/install.mjs; --uninstall removes this block.',
       `custom-shader = ${quote(path.join(GHOSTTY_DIR, 'cogitator.glsl'))}`,
+      ...(animated ? [`custom-shader = ${quote(path.join(GHOSTTY_DIR, 'cogitator-live.glsl'))}`] : []),
+      `custom-shader-animation = ${animated}`,
       `background-image = ${quote(path.join(GHOSTTY_DIR, 'aquila.png'))}`,
       `config-file = ?${quote(path.join(GHOSTTY_DIR, 'cogitator.conf'))}`,
       BLOCK_END,
@@ -203,7 +212,7 @@ function setupGhostty() {
     ].join('\n')
   }
   write(file, text)
-  say(isUninstall ? '  блок когитатора убран' : '  блок когитатора записан')
+  say(isUninstall ? '  блок когитатора убран' : `  блок когитатора записан${animated ? ' (живой экран)' : ''}`)
   const bin = isDry ? null : ghosttyBinary()
   if (bin !== null) {
     try {

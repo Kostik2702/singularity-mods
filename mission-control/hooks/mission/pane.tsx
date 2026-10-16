@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
-import { cells, slateKit, stamp } from '../lib/frame'
+import { COG, cells, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
@@ -22,6 +22,8 @@ export type AgentsPaneData = {
   viewAgentId: string | null
   /** Long actions running now that the Processes tab shows: a pointer to it. Absent counts as none. */
   jobsRunning?: number
+  /** The terminal draws pictures (kitty graphics: Ghostty, kitty): the slate shows its aquila as one. */
+  pictures?: boolean
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -381,6 +383,10 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
 
 /** Rows the crest takes with the gap under it; the crest shows only on a tab this tall. */
 const CREST_MIN_ROWS = 34
+/** The purity seal under Магистр's card hangs only on a tab this tall. */
+const SEAL_MIN_ROWS = 30
+/** What a purity seal's parchment says, one per turn. */
+const SEAL_WORDS = ['ОСВЯЩЕНО', 'ОЧИЩЕНО', 'ВЕРА · ДОЛГ', 'ПРОВЕРЕНО ИНКВИЗИЦИЕЙ', 'ЧИСТО'] as const
 
 /**
  * The Agents tab as a data-slate: the crest and the litany, an inverse status strip,
@@ -396,18 +402,45 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   const inner = Math.max(24, cols - 2)
   const tree = buildTree(d.agents, d.turn, d.now, t.tree)
   const out: JSX.Element[] = []
+  // Screen rows taken beyond one per element of `out` (a picture, the instrument block).
+  let taller = 0
 
-  if (rows >= CREST_MIN_ROWS) out.push(...kit.crest(inner))
-  const banner = bannerLine(t, 'agents', inner)
-  if (banner !== null) {
-    out.push(
-      <Text color={c.accent} bold wrap="truncate-end">
-        {banner}
-      </Text>,
-    )
+  // The crest: the detailed aquila as a picture where the terminal draws pictures,
+  // else the block one; only on a tab tall enough to spare the rows.
+  if (rows >= CREST_MIN_ROWS) {
+    const picture = d.pictures === true ? kit.aquila(inner) : null
+    if (picture !== null) {
+      out.push(picture.element)
+      taller += picture.rows - 1
+    } else out.push(...kit.crest(inner))
   }
+
   const inLine = d.agents.filter(r => r.id !== MAIN && isConfirmed(r) && isWorking(r.phase)).length
-  out.push(kit.strip(slate.strip.agents, `ход ${d.turn} · в строю ${inLine}`, inner))
+  const awake = d.agents.some(r => isWorking(r.phase))
+  // The instrument block: the cog (turning while agents work) beside the litany, the
+  // status strip, the Machine Spirit's state, the crawling binaric cant and the date.
+  const block = kit.instruments({
+    width: inner,
+    now: d.now,
+    litany: bannerLine(t, 'agents', inner - COG.columns - 1),
+    strip: [slate.strip.agents, `ход ${d.turn} · в строю ${inLine}`],
+    state: { label: 'ДУХ МАШИНЫ', awake: 'БОДРСТВУЕТ', asleep: 'ДРЕМЛЕТ' },
+    awake,
+  })
+  if (block !== null) {
+    out.push(block)
+    taller += COG.rows - 1
+  } else {
+    const banner = bannerLine(t, 'agents', inner)
+    if (banner !== null) {
+      out.push(
+        <Text color={c.accent} bold wrap="truncate-end">
+          {banner}
+        </Text>,
+      )
+    }
+    out.push(kit.strip(slate.strip.agents, `ход ${d.turn} · в строю ${inLine}`, inner))
+  }
 
   for (const { row, lead, indent } of tree.lines) {
     const isMain = row.id === MAIN
@@ -467,6 +500,31 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
         stem: pad,
       }),
     )
+    // A purity seal hangs off Магистр's card at its right: red wax with a cross, and a
+    // parchment strip. The tree's stem runs past it to the agents below.
+    if (isMain && rows >= SEAL_MIN_ROWS) {
+      const stem = tree.lines.length > 1 ? `${t.tree.stem}` : '  '
+      const strip = ` ${SEAL_WORDS[d.turn % SEAL_WORDS.length] ?? SEAL_WORDS[0]} `
+      const at = Math.max(cells(stem), inner - cells(strip) - 3)
+      out.push(
+        <Text>
+          <Text color={c.muted}>{stem}</Text>
+          {' '.repeat(Math.max(0, at - cells(stem) + Math.floor((cells(strip) - 3) / 2)))}
+          <Text color={c.critical}>▐</Text>
+          <Text backgroundColor={c.critical} color={c.accent} bold>
+            ✠
+          </Text>
+          <Text color={c.critical}>▌</Text>
+        </Text>,
+        <Text>
+          <Text color={c.muted}>{stem}</Text>
+          {' '.repeat(Math.max(0, at - cells(stem)))}
+          <Text backgroundColor={c.ink2} color={c.surface}>
+            {strip}
+          </Text>
+        </Text>,
+      )
+    }
   }
 
   if (tree.hidden > 0) out.push(<Text color={c.muted}>{hiddenText(tree.hidden)}</Text>)
@@ -487,7 +545,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   }
 
   // The vox-log: as many calls as the tab has room for under everything above.
-  const room = Math.max(FEED_MIN, rows - out.length - 2 - 3 - 1)
+  const room = Math.max(FEED_MIN, rows - out.length - taller - 2 - 3 - 1)
   const recent = feedRows(table, t, d, room, inner - 4)
   const feed = kit.panel({
     style: 'light',

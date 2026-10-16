@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { AgentRow, Job } from '../../types'
-import { slateKit, stamp, wrapLines } from '../lib/frame'
+import { COG, slateKit, stamp, wrapLines } from '../lib/frame'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, meter, plural } from '../lib/viz'
@@ -307,15 +307,28 @@ function drawJobsSlate(table: ElementTable, d: JobsPaneData, cols: number, rows:
   const ENDED_MARK = endedMarks(t)
   const out: JSX.Element[] = []
 
-  const banner = bannerLine(t, 'jobs', inner)
-  if (banner !== null) {
-    out.push(
-      <Text color={c.accent} bold wrap="truncate-end">
-        {banner}
-      </Text>,
-    )
+  const head = running.length === 0 ? 'в покое' : `${running.length} ${plural(running.length, w.jobsHead)}`
+  // The forge's instruments: the cog turns while a rite runs, the furnace burns or cools.
+  const block = kit.instruments({
+    width: inner,
+    now: d.now,
+    litany: bannerLine(t, 'jobs', inner - COG.columns - 1),
+    strip: [slate.strip.jobs, head],
+    state: { label: 'ГОРН', awake: 'ПЫЛАЕТ', asleep: 'ОСТЫЛ' },
+    awake: running.length > 0,
+  })
+  if (block !== null) out.push(block)
+  else {
+    const banner = bannerLine(t, 'jobs', inner)
+    if (banner !== null) {
+      out.push(
+        <Text color={c.accent} bold wrap="truncate-end">
+          {banner}
+        </Text>,
+      )
+    }
+    out.push(kit.strip(slate.strip.jobs, head, inner))
   }
-  out.push(kit.strip(slate.strip.jobs, running.length === 0 ? 'в покое' : `${running.length} ${plural(running.length, w.jobsHead)}`, inner))
 
   for (const job of running) {
     const lines: JSX.Element[] = []
