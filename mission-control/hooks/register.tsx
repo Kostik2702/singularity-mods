@@ -43,8 +43,13 @@ const JOBS_DIR_RETRY_MS = 30_000
 const ALERTS_EVERY_MS = 5 * 60_000
 /** Timers on the Agents tab are redrawn once a second, and only while something works. */
 const TICK_MS = 1000
-/** The slate's cog turns at eight frames a second while an agent works. */
-const COG_MS = 125
+/**
+ * The slate's cog turns at four frames a second while an agent works: each frame is a
+ * redraw of the terminal (and of its shader over the whole window), and at ten pixels
+ * across four read as a turn as well as eight (measured 2026-10-16: Ghostty ~8-9% CPU
+ * with two sessions open and the cog turning).
+ */
+const COG_MS = 250
 /** After a blit the engine refused (the tab not on screen), the cog waits this long. */
 const COG_REST_MS = 5000
 /** The engine's own agent list is read every 2 s, and only while a subagent works. */
@@ -399,14 +404,15 @@ async function turnCog($: $, theme: Theme, skullOnJobs: boolean): Promise<void> 
 }
 
 /**
- * The servo-skull on Обряды hovers whenever its tab is on screen: the next frame's file,
- * swapped by a blit. A refused blit (the tab hidden, or a terminal without pictures,
- * where the cog is drawn instead) rests it a while.
+ * The servo-skull on Обряды hovers while a rite runs: the next frame's file, swapped by a
+ * blit. At rest it holds still (each frame is a redraw of the window). A refused blit
+ * (the tab hidden, or a terminal without pictures, where the cog is drawn instead) rests it.
  */
 async function hoverSkull($: $, dir: string): Promise<void> {
   try {
     const now = await $.clock.now()
     if (now < skullRestsUntil) return
+    if (!(await read($, jobsA)).some(j => j.status === 'run')) return
     const res = await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, source: { file: skullFrame(dir, now), format: 'png' } })
     if (res.deny !== undefined) skullRestsUntil = now + COG_REST_MS
   } catch {

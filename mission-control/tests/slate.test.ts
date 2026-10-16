@@ -324,3 +324,32 @@ test('Легион: a rank’s portrait hangs on the branch before its card; a r
   expect(shown).toMatch(/┏━┫ ⌬ ТЕХНОЖРЕЦ · CODER ┣/)
   await ui.unmount()
 })
+
+test('the servo-skull holds still at rest and hovers only while a rite runs', SKULL_OPTIONS, async ($, on) => {
+  let finish: (() => void) | undefined
+  const ran = new Promise<void>(resolve => {
+    finish = resolve
+  })
+  const engine = engineBeneath(on, {
+    env: { TERM_PROGRAM: 'ghostty' },
+    bash: async () => {
+      await ran
+      return { result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }
+    },
+  })
+  const blits: string[] = []
+  on('ui.blit', (_$, e) => {
+    blits.push((e as { key: string }).key)
+    return { value: {} }
+  })
+  await $.session.start(SESSION)
+  await engine.clock.advance(3000)
+  expect(blits.filter(k => k === 'skull')).toEqual([])
+  await submit($, 'собери')
+  await $.turn.start({ text: 'собери', turnId: 't1' })
+  const call = toolCall($, { tool: 'Bash', tool_use_id: 'tu-b', command: 'npm run build', description: 'Build' })
+  await engine.clock.advance(8000)
+  expect(blits.filter(k => k === 'skull').length).toBeGreaterThan(0)
+  finish?.()
+  await call
+})

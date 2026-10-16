@@ -138,7 +138,7 @@ export function crestLines(width: number): string[] | null {
 export const COG = { key: 'cog', columns: 10, rows: 5 } as const
 
 /** A servo-skull in place of the cog: its Image's key and box, and the frames it cycles through. */
-export const SKULL = { key: 'skull', columns: 12, rows: 9, frames: 12, frameMs: 150 } as const
+export const SKULL = { key: 'skull', columns: 12, rows: 9, frames: 12, frameMs: 250 } as const
 
 /** The frame of the servo-skull at `now` in the folder `dir` (frame-00.png ...), the same on every redraw and blit. */
 export function skullFrame(dir: string, now: number): string {
