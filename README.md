@@ -117,6 +117,13 @@ tools/verify.sh            # control bytes → claude plugin validate → claude
 node tools/prove-tests.mjs # planted bugs: the suite must go red on every one
 ```
 
+The live check, a real session in a pseudo-terminal with every screen it paints dumped as text (macOS, Linux, Windows; text only, no colours or pictures):
+
+```bash
+python3 -m venv ~/venvs/drive-tui && ~/venvs/drive-tui/bin/pip install pyte
+~/venvs/drive-tui/bin/python tools/drive-tui.py "$PWD" /tmp/live "ответь одним словом: готов"
+```
+
 Before any session has loaded the mod, tsc needs the engine's types:
 
 ```bash
