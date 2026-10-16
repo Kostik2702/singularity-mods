@@ -779,7 +779,7 @@ export const register: Register = (on, options) => {
   })
 
   registerMission(on, theme, crestFile, portraitsDir)
-  registerMemory(on, theme, sealFile)
+  registerMemory(on, theme, sealFile, crestFile)
   registerJobs(on, theme, skullDir)
   registerChrome(on, theme)
 }
