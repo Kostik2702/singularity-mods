@@ -3,6 +3,7 @@ import type { ElementTable } from 'claude-code'
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { COG, cells, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
+import { thoughtFor } from '../lib/thoughts'
 import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, plural } from '../lib/viz'
@@ -445,6 +446,16 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   if (block !== null) {
     out.push(block)
     taller += COG.rows - 1
+    // Thought for the day, under the instruments, as every page of the Imperium carries one.
+    out.push(
+      <Text wrap="truncate-end">
+        <Text color={c.accent}>✠ </Text>
+        <Text color={c.muted}>МЫСЛЬ ДНЯ ▸ </Text>
+        <Text color={c.ink2} italic>
+          «{thoughtFor(d.now)}»
+        </Text>
+      </Text>,
+    )
   } else {
     const banner = bannerLine(t, 'agents', inner)
     if (banner !== null) {

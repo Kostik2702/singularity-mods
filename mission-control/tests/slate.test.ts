@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { cogCells } from '../hooks/lib/cog'
+import { THOUGHTS, thoughtFor } from '../hooks/lib/thoughts'
 import { CREST, binaryCant, cells, crestLines, edgeBottom, edgeTop, imperialDate, wrapLines } from '../hooks/lib/frame'
 import type { FrameStyle } from '../hooks/lib/frame'
 import { TASKS_DIR, engineBeneath, fakeFs, mountAgents, mountJobs, spawn, step, submit, toolCall } from './helpers'
@@ -251,4 +252,12 @@ test('the transcript: a failed rite reads as heresy found, a refused one as the 
   const refused = await row("The user doesn't want to proceed with this tool use. The tool use was rejected")
   expect(screen(await refused.drawn())).toContain('⊘ ОТВЕРГНУТО МАГИСТРОМ · ОБРЯД · BASH')
   await refused.unmount()
+})
+
+test('thought for the day: the same all day, another the next, every one short enough for a line', () => {
+  const day = Date.UTC(2026, 9, 16)
+  expect(thoughtFor(day + 1000)).toBe(thoughtFor(day + 23 * 3_600_000))
+  expect(thoughtFor(day)).not.toBe(thoughtFor(day + 86_400_000))
+  expect(new Set(THOUGHTS).size).toBe(THOUGHTS.length)
+  for (const thought of THOUGHTS) expect([...thought].length).toBeLessThanOrEqual(60)
 })
