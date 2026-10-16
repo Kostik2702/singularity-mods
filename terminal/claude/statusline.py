@@ -134,7 +134,8 @@ def limit_chunk(label, window, compact):
 
 def main():
     try:
-        data = json.load(sys.stdin)
+        # bytes, not the text stream: on Windows a pipe's stdio is the locale's code page (cp1251…)
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     except Exception:
         return 0
     if not isinstance(data, dict):
@@ -205,7 +206,7 @@ def main():
     if second:
         lines.append(gap.join(second))
 
-    sys.stdout.write("\n".join(lines))
+    sys.stdout.buffer.write("\n".join(lines).encode("utf-8"))
     return 0
 
 
