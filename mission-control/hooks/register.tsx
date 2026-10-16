@@ -479,11 +479,14 @@ async function hoverSkull($: $, dir: string, pictures: boolean): Promise<void> {
  * Is the terminal really drawing pictures? Taken for one by its name (Ghostty, kitty,
  * WezTerm), it is asked once: the crest's picture blitted again. Where the engine answers
  * that it draws the alt there, the slate goes back to its cells, every tab redrawn.
+ * The blit carries the very picture the tab draws (the chosen one when there is one):
+ * the mod's own in its place would stand on Легион until the tab is drawn again.
  */
-async function probePictures($: $): Promise<void> {
+async function probePictures($: $, crestFile: string | null): Promise<void> {
   try {
     if (!(await drawsPictures($))) return
-    const res = await $.ui.blit({ requestId: AGENTS_PANE, key: 'crest', source: { png: AQUILA_PNG } })
+    const source = crestFile !== null ? { file: crestFile, format: 'png' as const } : { png: AQUILA_PNG }
+    const res = await $.ui.blit({ requestId: AGENTS_PANE, key: 'crest', source })
     if (saysAlt(res.deny)) {
       refusePictures()
       $.ui.invalidate('ui.render')
@@ -572,7 +575,7 @@ export const register: Register = (on, options) => {
       .then(() => openAgentsPane($, theme))
       .then(() => $.ui.invalidate('ui.render'))
       .then(() => {
-        if (theme.slate !== null) $.clock.after(2000, () => void probePictures($))
+        if (theme.slate !== null) $.clock.after(2000, () => void probePictures($, crestFile))
       })
       .catch(() => undefined)
     await fanOut([

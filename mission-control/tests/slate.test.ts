@@ -418,6 +418,19 @@ describe('WezTerm draws pictures; where the engine says otherwise, the cells com
     await ui.unmount()
   })
 
+  test('the probe blits the crest the person chose, never the mod’s own over it', { options: { theme: 'warhammer', aquilaImage: '/Users/me/aquila-custom.png' } }, async ($, on) => {
+    const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+    const sources: unknown[] = []
+    on('ui.blit', (_$, e) => {
+      const blit = e as { key: string; source?: unknown }
+      if (blit.key === 'crest') sources.push(blit.source)
+      return { value: {} }
+    })
+    await $.session.start(SESSION)
+    await engine.clock.advance(2500)
+    expect(sources).toEqual([{ file: '/Users/me/aquila-custom.png', format: 'png' }])
+  })
+
   test('a blit refused because the tab is not on screen changes nothing', WARHAMMER_OPTIONS, async ($, on) => {
     const engine = engineBeneath(on, { env: { TERM_PROGRAM: 'WezTerm' } })
     on('ui.blit', () => ({ value: { deny: 'nothing of this plugin is mounted there' } }))
