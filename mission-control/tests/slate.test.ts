@@ -167,3 +167,21 @@ test('the pictured aquila keeps its shape: 54 cells across take 9 rows', WARHAMM
   expect(picture.length).toBe(9)
   await ui.unmount()
 })
+
+test('a crest picture the person chose is read from its file; without one, the mod’s own', { options: { theme: 'warhammer', aquilaImage: '/Users/me/aquila.png' } }, async ($, on) => {
+  engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+  const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toContain('"file":"/Users/me/aquila.png"')
+  expect(tree).not.toContain('"png":')
+  await ui.unmount()
+})
+
+test('without a chosen crest the embedded aquila is drawn', WARHAMMER_OPTIONS, async ($, on) => {
+  engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+  const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toContain('"png":')
+  expect(tree).not.toContain('"file":')
+  await ui.unmount()
+})

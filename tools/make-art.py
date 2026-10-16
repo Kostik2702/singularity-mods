@@ -8,14 +8,22 @@ tail fan and hooked talons, stencil gold over a dark outline. This draws it with
 Pillow, symmetric from its left half, writes terminal/art/aquila-crest.png and embeds
 it as base64 in mission-control/hooks/lib/art.ts, so the mod needs no file at run time.
 Usage: python tools/make-art.py   (from the repo root; needs Pillow)
+
+  python tools/make-art.py --from <file or https URL> [--out <png>]
+    Cuts the emblem out of a picture the person chose (a gold or amber emblem on a dark,
+    grey ground, as Imperial wallpapers are): keeps the emblem's own pixels, makes the
+    ground transparent, crops it and pads it to 3 : 1. Writes terminal/art/aquila-custom.png
+    by default, which git ignores: someone else's artwork stays on this machine and never
+    goes into the repository. tools/install.mjs --aquila runs this and points the mod at it.
 """
 import base64
 import io
 import math
 import os
 import sys
+import urllib.request
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 W, H = 480, 160         # 3 : 1, the box of 54 x 9 terminal cells (a cell is 1 : 2)
 CX = W // 2
@@ -96,7 +104,56 @@ def body(img: Image.Image) -> None:
     draw.ellipse(s([(CX - 7, 58), (CX + 7, 72)]), fill=gold(20), outline=OUTLINE, width=2 * SCALE)
 
 
+def cut_emblem(source: str, out: str) -> int:
+    """The emblem of a picture the person chose, on a transparent ground, at 3 : 1."""
+    if source.startswith(('http://', 'https://')):
+        req = urllib.request.Request(source, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=30) as res:
+            data = res.read()
+        img = Image.open(io.BytesIO(data))
+    else:
+        img = Image.open(source)
+    rgb = img.convert('RGB')
+    # The emblem is warm (red well above blue) and lit; the ground is grey or dark.
+    r, g, b = rgb.split()
+    warm = Image.eval(Image.merge('RGB', (r, g, b)).convert('RGB'), lambda v: v)
+    px = warm.load()
+    mask = Image.new('L', rgb.size, 0)
+    mp = mask.load()
+    for y in range(rgb.height):
+        for x in range(rgb.width):
+            R, G, B = px[x, y]
+            if R - B > 45 and R > 70:
+                mp[x, y] = 255
+    # Close the rust's pinholes, drop specks, then soften the edge by a pixel.
+    mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+    mask = mask.filter(ImageFilter.GaussianBlur(0.8))
+    box = mask.point(lambda v: 255 if v > 128 else 0).getbbox()
+    if box is None:
+        print('make-art: no warm emblem found in that picture', file=sys.stderr)
+        return 1
+    emblem = rgb.convert('RGBA')
+    emblem.putalpha(mask)
+    emblem = emblem.crop(box)
+    # Pad to 3 : 1, the emblem centred, so the Agents tab's box keeps its shape.
+    w, h = emblem.size
+    cw, ch = max(w, 3 * h), max(h, math.ceil(w / 3))
+    canvas = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
+    canvas.paste(emblem, ((cw - w) // 2, (ch - h) // 2), emblem)
+    width = min(960, cw)
+    canvas = canvas.resize((width, round(width / 3)), Image.LANCZOS)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    canvas.save(out, optimize=True)
+    print(os.path.abspath(out), canvas.size)
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1] == '--from':
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out' else os.path.join(root, 'terminal', 'art', 'aquila-custom.png')
+        return cut_emblem(sys.argv[2], out)
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     big = Image.new('RGBA', (W * SCALE, H * SCALE), (0, 0, 0, 0))
     left_half(big)

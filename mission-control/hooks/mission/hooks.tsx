@@ -43,7 +43,7 @@ async function drawsPictures($: EngineInterface): Promise<boolean> {
   }
 }
 
-export function registerMission(on: On, theme: Theme): void {
+export function registerMission(on: On, theme: Theme, crestFile: string | null = null): void {
   const c = theme.colors
   on('turn.start', async ($, e, next) => {
     const res = await next(e)
@@ -141,6 +141,7 @@ export function registerMission(on: On, theme: Theme): void {
       viewAgentId: e.props.view.agentId ?? null,
       jobsRunning: runningShown(await read($, jobsA), now).length,
       pictures: await drawsPictures($),
+      crestFile,
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {

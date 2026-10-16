@@ -395,6 +395,9 @@ export const register: Register = (on, options) => {
   // The look comes from the `theme` option (/config → mission-control); a change there
   // reloads the module, so it is read once here and handed to every drawing.
   const theme = themeOf((options as Record<string, unknown> | undefined)?.theme)
+  // A crest picture the person chose (tools/install.mjs --aquila): an absolute PNG path.
+  const chosen = (options as Record<string, unknown> | undefined)?.aquilaImage
+  const crestFile = typeof chosen === 'string' && chosen.trim().length > 0 ? chosen.trim() : null
 
   on('session.start', async ($, e, next) => {
     // The tabs open first and on their own, so a registration that fails below cannot keep
@@ -599,7 +602,7 @@ export const register: Register = (on, options) => {
     return { result: JSON.stringify(state, null, 1) }
   })
 
-  registerMission(on, theme)
+  registerMission(on, theme, crestFile)
   registerMemory(on, theme)
   registerJobs(on, theme)
   registerChrome(on, theme)

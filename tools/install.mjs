@@ -8,6 +8,11 @@
 //   node tools/install.mjs --animated   also the living screen: a rolling refresh band,
 //                                       breathing phosphor (Ghostty then redraws all the time)
 //   node tools/install.mjs --static     back to the still screen (the default)
+//   node tools/install.mjs --aquila <url or file>
+//                                       the Agents tab's crest from a picture you choose:
+//                                       its emblem cut out locally (Python 3 + Pillow) into
+//                                       terminal/art/aquila-custom.png, never committed;
+//                                       `--aquila none` goes back to the mod's own
 //   node tools/install.mjs --no-ghostty Claude Code only
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
@@ -43,6 +48,10 @@ const isUninstall = args.has('--uninstall')
 const withGhostty = !args.has('--no-ghostty')
 // --animated / --static choose; neither keeps what the block already says.
 const animatedFlag = args.has('--animated') ? true : args.has('--static') ? false : null
+const argv = process.argv.slice(2)
+const aquilaAt = argv.indexOf('--aquila')
+const aquilaSource = aquilaAt >= 0 ? (argv[aquilaAt + 1] ?? '') : null
+const CUSTOM_CREST = path.join(ROOT, 'terminal', 'art', 'aquila-custom.png')
 const said = []
 
 function say(line) {
@@ -64,6 +73,39 @@ function write(file, text) {
   fs.writeFileSync(file, text)
 }
 
+// ── The crest picture you chose ─────────────────────────────────────────────
+
+/** A Python that has Pillow, for tools/make-art.py; null when there is none. */
+function pythonWithPillow() {
+  for (const bin of [process.env.PYTHON, 'python3', 'python'].filter(Boolean)) {
+    try {
+      execFileSync(bin, ['-c', 'import PIL'], { stdio: 'ignore' })
+      return bin
+    } catch {
+      // not this one
+    }
+  }
+  return null
+}
+
+/**
+ * The crest the Agents tab shows: a picture cut out now from `--aquila`, the one cut
+ * before (kept on a rerun), or none (the mod's own) after `--aquila none`.
+ */
+function crestPicture() {
+  if (aquilaSource === null) return fs.existsSync(CUSTOM_CREST) ? CUSTOM_CREST : null
+  if (aquilaSource === '' || aquilaSource === 'none') {
+    if (!isDry && fs.existsSync(CUSTOM_CREST)) fs.rmSync(CUSTOM_CREST)
+    say('Аквила: встроенная')
+    return null
+  }
+  const py = pythonWithPillow()
+  if (py === null) throw new Error('для --aquila нужен Python 3 с Pillow: python3 -m pip install pillow (или укажи PYTHON=<путь>)')
+  say(`Аквила: вырезаю эмблему из ${aquilaSource}`)
+  if (!isDry) execFileSync(py, [path.join(ROOT, 'tools', 'make-art.py'), '--from', aquilaSource, '--out', CUSTOM_CREST], { stdio: 'inherit' })
+  return CUSTOM_CREST
+}
+
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
 function claudeDir() {
@@ -78,7 +120,7 @@ function pluginDirs(value) {
     .filter(s => s.length > 0)
 }
 
-function setupClaude() {
+function setupClaude(crest) {
   const dir = claudeDir()
   const file = path.join(dir, 'settings.json')
   const statePath = path.join(dir, 'singularity-mods.install.json')
@@ -106,6 +148,7 @@ function setupClaude() {
       opts.theme = 'classic'
       say('  mission-control: theme ← classic')
     }
+    if (opts !== undefined && 'aquilaImage' in opts) delete opts.aquilaImage
     write(file, `${JSON.stringify(settings, null, 2)}\n`)
     if (!isDry && fs.existsSync(statePath)) fs.rmSync(statePath)
     return
@@ -124,6 +167,10 @@ function setupClaude() {
   settings.pluginConfigs['mission-control'].options ??= {}
   settings.pluginConfigs['mission-control'].options.theme = MOD_THEME
   say(`  mission-control: theme = ${MOD_THEME}`)
+  if (crest !== null) {
+    settings.pluginConfigs['mission-control'].options.aquilaImage = crest
+    say(`  mission-control: aquilaImage = ${crest}`)
+  } else delete settings.pluginConfigs['mission-control'].options.aquilaImage
 
   if (settings.theme !== CLAUDE_THEME) {
     state.previousTheme = settings.theme ?? null
@@ -227,7 +274,7 @@ function setupGhostty() {
 
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
-  setupClaude()
+  setupClaude(isUninstall ? null : crestPicture())
   if (withGhostty) setupGhostty()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')

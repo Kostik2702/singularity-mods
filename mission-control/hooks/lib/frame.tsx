@@ -312,16 +312,20 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
   }
 
   /**
-   * The aquila as a picture `width` cells across (rows to keep its shape),
+   * The aquila as a picture `width` cells across (rows to keep its shape), from `file`
+   * when the person chose one,
    * or null where the surface has no Image. Only where the terminal draws pictures:
    * elsewhere an Image draws its `alt`, so the caller keeps the block crest there.
    */
-  const aquila = (width: number): { element: JSX.Element; rows: number } | null => {
+  const aquila = (width: number, file: string | null = null): { element: JSX.Element; rows: number } | null => {
     const { Image } = term
     if (Image === undefined) return null
     // A cell is twice as tall as wide: the box keeps the picture's shape at width × height / (2 × width px).
     const rows = Math.max(3, Math.round((width * AQUILA_PNG_SIZE.height) / (2 * AQUILA_PNG_SIZE.width)))
-    return { element: <Image source={{ png: AQUILA_PNG }} columns={width} rows={rows} alt="✠ аквила Империума ✠" />, rows }
+    // A picture the person chose (a PNG at 3 : 1, as tools/make-art.py --from makes it) is
+    // read by the terminal from its file; else the aquila embedded in the mod.
+    const source = file !== null ? { file, format: 'png' as const } : { png: AQUILA_PNG }
+    return { element: <Image source={source} columns={width} rows={rows} alt="✠ аквила Империума ✠" />, rows }
   }
 
   /**

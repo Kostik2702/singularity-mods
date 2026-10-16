@@ -60,7 +60,8 @@ Two more pieces finish the warhammer look, outside the mod's own drawing:
 |---|---|---|
 | Claude Code colour theme «Когитатор» | `mission-control/themes/cogitator.json`, shipped with the plugin; its id is `custom:mission-control:cogitator` | the colours of everything the engine draws itself: text, the prompt's border, permission and question dialogs, toasts, diffs, the background of your messages |
 | Ghostty data-slate | `terminal/ghostty/`: `cogitator.conf` (palette, padding), `cogitator.glsl` (the shader), `cogitator-live.glsl` (the living screen, opt-in), `aquila.png` (from `tools/make-aquila.py`) | amber glass, scanlines and a phosphor glow, and around the glass a brass housing drawn in the window's padding: bevel, gilt trim, rivets, a cross medallion in each corner, a Mechanicus hazard band. With `--animated`, a refresh band rolls down the glass and the phosphor breathes (Ghostty then redraws all the time). Ghostty has no per-window profile, so it applies to every Ghostty window |
-| Pixel art | `terminal/art/aquila-crest.png`, embedded in `hooks/lib/art.ts` by `tools/make-art.py` | the detailed aquila of the Agents tab |
+| Pixel art | `terminal/art/aquila-crest.png`, embedded in `hooks/lib/art.ts` by `tools/make-art.py` | the mod's own aquila on the Agents tab: drawn here in the emblem's manner, not a copy of any artwork |
+| A crest you choose | the `aquilaImage` option: a PNG path | any emblem picture instead of the mod's own. `node tools/install.mjs --aquila <url or file>` cuts the emblem out of the picture (a gold or amber emblem on a dark ground: its own pixels kept, the ground made transparent, padded to 3 : 1; Python 3 with Pillow) into `terminal/art/aquila-custom.png` and points the option at it. That file is git-ignored on purpose: someone else's artwork stays on your machine and is never committed; run the same command on each machine. `--aquila none` goes back to the mod's own |
 
 `node tools/install.mjs` puts all three in place (see Install).
 
@@ -78,6 +79,7 @@ On any machine, from wherever the repo is cloned (Node 18+):
 node tools/install.mjs              # the mod, its warhammer theme, the «Когитатор» colours, the Ghostty slate
 node tools/install.mjs --animated   # also the living screen: a rolling refresh band, breathing phosphor
 node tools/install.mjs --static     # back to the still screen (the default; a run with neither keeps the last choice)
+node tools/install.mjs --aquila <url or file>  # the Agents tab's crest from a picture you choose (see below)
 node tools/install.mjs --no-ghostty # Claude Code only (Windows: Ghostty is skipped by itself)
 node tools/install.mjs --dry-run    # say what would change, write nothing
 node tools/install.mjs --uninstall  # take the look off; the mod stays loaded, in classic

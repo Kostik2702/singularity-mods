@@ -24,6 +24,8 @@ export type AgentsPaneData = {
   jobsRunning?: number
   /** The terminal draws pictures (kitty graphics: Ghostty, kitty): the slate shows its aquila as one. */
   pictures?: boolean
+  /** A PNG the person chose for the aquila (the `aquilaImage` option); absent, the mod's own. */
+  crestFile?: string | null
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -408,7 +410,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   // The crest: the detailed aquila as a picture where the terminal draws pictures,
   // else the block one; only on a tab tall enough to spare the rows.
   if (rows >= CREST_MIN_ROWS) {
-    const picture = d.pictures === true ? kit.aquila(inner) : null
+    const picture = d.pictures === true ? kit.aquila(inner, d.crestFile ?? null) : null
     if (picture !== null) {
       out.push(picture.element)
       taller += picture.rows - 1
