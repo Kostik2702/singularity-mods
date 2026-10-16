@@ -7,6 +7,7 @@ import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, meter, plural } from '../lib/viz'
 import { clip } from '../mission/model'
 import { whyRows, wrapTwo } from '../mission/pane'
+import type { Pixmap } from '../lib/pixmap'
 import { SILENT_OUTPUT_MS, endedShown, runningShown } from './model'
 
 // NB: never name a variable `h` in this module: JSX compiles to the global `h(...)`,
@@ -18,6 +19,8 @@ export type JobsPaneData = {
   now: number
   /** A servo-skull's frames (the `servoSkull` option) where the terminal draws pictures; absent, the cog. */
   skullDir?: string | null
+  /** The servo-skull's current frame as a pixmap, where the terminal draws no pictures. */
+  skullPix?: Pixmap | null
 }
 
 function endedMarks(t: Theme): Record<Exclude<Job['status'], 'run'>, { icon: string; color: string; label: string }> {
@@ -316,11 +319,12 @@ function drawJobsSlate(table: ElementTable, d: JobsPaneData, cols: number, rows:
   const block = kit.instruments({
     width: inner,
     now: d.now,
-    litany: bannerLine(t, 'jobs', inner - (d.skullDir != null ? SKULL.columns : COG.columns) - 1),
+    litany: bannerLine(t, 'jobs', inner - (d.skullDir != null || d.skullPix != null ? SKULL.columns : COG.columns) - 1),
     strip: [slate.strip.jobs, head],
     state: { label: 'ГОРН', awake: 'ПЫЛАЕТ', asleep: 'ОСТЫЛ' },
     awake: running.length > 0,
     skullDir: d.skullDir ?? null,
+    skullPix: d.skullPix ?? null,
   })
   if (block !== null) out.push(block)
   else {

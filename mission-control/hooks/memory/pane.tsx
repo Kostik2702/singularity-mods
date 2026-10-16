@@ -3,6 +3,7 @@ import type { ElementTable, RenderChildren } from 'claude-code'
 import type { Alerts, ClaudeMdFile, HookInjection, MbCall, TurnRow, Usage } from '../../types'
 import { fmtTokens } from '../lib/parse'
 import { SEAL_ASPECT, cells, isWarped, slateKit, stamp } from '../lib/frame'
+import type { Pixmap } from '../lib/pixmap'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { allocate, bigText, fmtDur, meter, pct, plural, sparkline } from '../lib/viz'
@@ -24,6 +25,8 @@ export type MemoryPaneData = {
   now: number
   /** A purity seal's PNG (the `puritySeal` option) where the terminal draws pictures; absent, none. */
   sealFile?: string | null
+  /** The purity seal's pixmap, where the terminal draws no pictures. */
+  sealPix?: Pixmap | null
 }
 
 type Source = { name: string; tokens: number; color: string; isPulled: boolean }
@@ -56,8 +59,9 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   // The blocks' rows do not depend on their width (each row is one line): a first pass
   // counts them, the second lays them out beside the seal.
   const inner = Math.max(24, cols - 2)
-  const { Image } = table as Partial<ElementTable<'terminal'>>
-  if (t.slate === null || d.sealFile == null || Image === undefined || inner < 36) return layoutMemory(table, d, cols, rows, t, null).tree
+  const { Image, Raster } = table as Partial<ElementTable<'terminal'>>
+  const drawable = (d.sealFile != null && Image !== undefined) || (d.sealPix != null && Raster !== undefined)
+  if (t.slate === null || !drawable || inner < 36) return layoutMemory(table, d, cols, rows, t, null).tree
   const tall = layoutMemory(table, d, cols, rows, t, null).besideRows
   const wide = Math.min(Math.floor(inner / 3), Math.max(6, Math.round((tall * 2 * SEAL_ASPECT.width) / SEAL_ASPECT.height)))
   return layoutMemory(table, d, cols, rows, t, { columns: wide, rows: tall }).tree
@@ -386,9 +390,15 @@ function layoutMemory(
       <Box flexDirection="column" backgroundColor={pal.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
         {rows >= 50 ? kit.crest(inner) : ''}
         <Box flexDirection="row">
-          {seal !== null && Image !== undefined && d.sealFile != null ? (
+          {seal !== null ? (
             <Box width={beside} paddingRight={1} flexShrink={0}>
-              <Image source={{ file: d.sealFile, format: 'png' }} columns={seal.columns} rows={seal.rows} alt="✠" />
+              {Image !== undefined && d.sealFile != null ? (
+                <Image source={{ file: d.sealFile, format: 'png' }} columns={seal.columns} rows={seal.rows} alt="✠" />
+              ) : d.sealPix != null ? (
+                kit.picture('seal', d.sealPix, seal.columns, seal.rows)
+              ) : (
+                ''
+              )}
             </Box>
           ) : (
             ''

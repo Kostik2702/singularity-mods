@@ -353,3 +353,47 @@ test('the servo-skull holds still at rest and hovers only while a rite runs', SK
   finish?.()
   await call
 })
+
+// A 2 x 2 pixmap, every pixel an opaque amber: what tools/make-art.py writes beside a picture.
+const PIX = JSON.stringify({ w: 2, h: 2, rgba: btoa(String.fromCharCode(...Array.from({ length: 4 }, () => [255, 191, 77, 255]).flat())) })
+
+describe('pictures where the terminal draws none (Windows Terminal and the like)', () => {
+  test('Легион: the aquila in braille, from the mod’s own pixmap', WARHAMMER_OPTIONS, async ($, on) => {
+    engineBeneath(on)
+    const ui = await mountAgents($, 'terminal', { cols: 56, rows: 50 })
+    const shown = screen(await ui.drawn())
+    expect(shown).toMatch(/[⠁-⣿]{6}/)
+    expect(shown).not.toContain('▗▄▖ ▗▄▖')
+    await ui.unmount()
+  })
+
+  test('Обряды: the servo-skull’s frame in half blocks, from the pixmap beside it', SKULL_OPTIONS, async ($, on) => {
+    const fs = fakeFs(on)
+    for (let k = 0; k < 12; k += 1) fs.write(`/Users/me/servo-skull/frame-${String(k).padStart(2, '0')}.pix.json`, PIX)
+    engineBeneath(on)
+    const ui = await mountJobs($, 'terminal', { cols: 56, rows: 40 })
+    const drawn = await ui.drawn()
+    expect(JSON.stringify(drawn)).toContain('"key":"skull"')
+    expect(screen(drawn)).toContain('▀'.repeat(12))
+    await ui.unmount()
+  })
+
+  test('Архивы: the purity seal in half blocks, beside the blocks as the picture would be', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
+    const fs = fakeFs(on)
+    fs.write('/Users/me/purity-seal.pix.json', PIX)
+    engineBeneath(on)
+    const ui = await $.ui.mount({
+      plugin: 'mission-control',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'mem-meter',
+      props: { title: 'x', isFocused: false, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+    })
+    const drawn = await ui.drawn()
+    expect(JSON.stringify(drawn)).toContain('"key":"seal"')
+    const dial = screen(drawn).split('\n').find(r => r.includes('ПРИНЯТО ИЗ АРХИВОВ')) ?? ''
+    expect(dial.startsWith(' ▀')).toBe(true)
+    expect([...dial.trimEnd()].length).toBe(56 - 1)
+    await ui.unmount()
+  })
+})

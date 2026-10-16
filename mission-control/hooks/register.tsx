@@ -19,7 +19,8 @@ import { MEMORY_PANE, registerMemory } from './memory/hooks'
 import { BOOT_MS, markBoot } from './lib/boot'
 import { cogCells } from './lib/cog'
 import { COG, SKULL, cogAngle, cogPalette, skullFrame } from './lib/frame'
-import { drawsPictures } from './lib/terminal'
+import { halfBlockCells } from './lib/pixmap'
+import { drawsPictures, loadPixmap } from './lib/terminal'
 import { countDoctor } from './lib/parse'
 import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
@@ -408,12 +409,19 @@ async function turnCog($: $, theme: Theme, skullOnJobs: boolean): Promise<void> 
  * blit. At rest it holds still (each frame is a redraw of the window). A refused blit
  * (the tab hidden, or a terminal without pictures, where the cog is drawn instead) rests it.
  */
-async function hoverSkull($: $, dir: string): Promise<void> {
+async function hoverSkull($: $, dir: string, pictures: boolean): Promise<void> {
   try {
     const now = await $.clock.now()
     if (now < skullRestsUntil) return
     if (!(await read($, jobsA)).some(j => j.status === 'run')) return
-    const res = await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, source: { file: skullFrame(dir, now), format: 'png' } })
+    // A picture's next file where the terminal draws pictures, else its pixmap in half blocks.
+    const frame = skullFrame(dir, now)
+    const pix = pictures ? null : await loadPixmap($, frame)
+    if (!pictures && pix === null) return
+    const res =
+      pix === null
+        ? await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, source: { file: frame, format: 'png' } })
+        : await $.ui.blit({ requestId: JOBS_PANE, key: SKULL.key, cells: halfBlockCells(pix, SKULL.columns, SKULL.rows) })
     if (res.deny !== undefined) skullRestsUntil = now + COG_REST_MS
   } catch {
     skullRestsUntil = Number.POSITIVE_INFINITY // no surface here: a reload tries again
@@ -528,12 +536,14 @@ export const register: Register = (on, options) => {
       },
       async () => {
         $.clock.every(TICK_MS, () => void tick($))
-        // On Обряды the servo-skull, where one is chosen and the terminal draws pictures, has
-        // its own timer; elsewhere both tabs' cogs turn on the one.
-        const skullOn = theme.slate !== null && skullDir !== null && (await drawsPictures($))
+        // On Обряды the servo-skull stands in the cog's place where it can be drawn (a picture,
+        // or the pixmaps beside its frames where the terminal draws none) on its own timer;
+        // elsewhere both tabs' cogs turn on the one.
+        const pictures = await drawsPictures($)
+        const skullOn = theme.slate !== null && skullDir !== null && (pictures || (await loadPixmap($, skullFrame(skullDir, 0))) !== null)
         if (theme.slate !== null) $.clock.every(COG_MS, () => void turnCog($, theme, skullOn))
         if (soundGain > 0) $.clock.every(1000, () => void listenRites($))
-        if (skullOn && skullDir !== null) $.clock.every(SKULL.frameMs, () => void hoverSkull($, skullDir))
+        if (skullOn && skullDir !== null) $.clock.every(SKULL.frameMs, () => void hoverSkull($, skullDir, pictures))
         $.clock.every(LIST_MS, () => void reconcile($, false))
         // A reload (or the mod set up mid-session) finds agents already at work: learn them now.
         await reconcile($, true)

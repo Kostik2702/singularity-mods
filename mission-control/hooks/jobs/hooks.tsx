@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 
-import { drawsPictures } from '../lib/terminal'
+import { skullFrame } from '../lib/frame'
+import { drawsPictures, loadPixmap } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { MAIN } from '../mission/model'
@@ -167,12 +168,15 @@ export function registerJobs(on: On, theme: Theme, skullDir: string | null = nul
 
   // The Processes tab: drawn by pane.tsx from the jobs and the agent rows.
   on('ui.render', { component: 'Pane', requestId: JOBS_PANE }, async ($, e) => {
+    const now = await $.clock.now()
+    const pictures = await drawsPictures($)
     const data = {
       jobs: await read($, jobsA),
       agents: await read($, agentsA),
-      now: await $.clock.now(),
-      // A servo-skull only where the terminal draws pictures; elsewhere the cog.
-      skullDir: skullDir !== null && (await drawsPictures($)) ? skullDir : null,
+      now,
+      // A servo-skull as pictures where the terminal draws them, else its frame in half blocks.
+      skullDir: skullDir !== null && pictures ? skullDir : null,
+      skullPix: skullDir !== null && !pictures ? await loadPixmap($, skullFrame(skullDir, now)) : null,
     }
     return drawJobsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {

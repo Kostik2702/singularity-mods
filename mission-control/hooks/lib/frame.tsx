@@ -1,6 +1,8 @@
 import type { ElementTable } from 'claude-code'
 
-import { AQUILA_PNG, AQUILA_PNG_SIZE } from './art'
+import { AQUILA_PIXMAP, AQUILA_PNG, AQUILA_PNG_SIZE } from './art'
+import { brailleCells, halfBlockCells } from './pixmap'
+import type { Pixmap } from './pixmap'
 import { cogCells, hex } from './cog'
 import type { CogPalette } from './cog'
 import type { Slate, Theme } from './theme'
@@ -383,6 +385,8 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     awake: boolean
     /** A servo-skull's frames in place of the cog, where the terminal draws pictures. */
     skullDir?: string | null
+    /** The servo-skull's current frame as a pixmap, where the terminal draws no pictures. */
+    skullPix?: Pixmap | null
     /** The warp's taint (the context past WARP_AT): the state overloaded, the cant broken. */
     warp?: boolean
   }): JSX.Element | null => {
@@ -391,6 +395,8 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     const skull =
       o.skullDir != null && Image !== undefined ? (
         <Image key={SKULL.key} source={{ file: skullFrame(o.skullDir, o.now), format: 'png' }} columns={SKULL.columns} rows={SKULL.rows} alt="☠" />
+      ) : o.skullPix != null ? (
+        picture(SKULL.key, o.skullPix, SKULL.columns, SKULL.rows)
       ) : null
     const wheel = skull ?? cog(cogAngle(o.now))
     if (wheel === null) return null
@@ -434,5 +440,25 @@ export function slateKit(table: ElementTable, t: Theme, slate: Slate) {
     )
   }
 
-  return { panel, crest, strip, gauge, keys, edge, cog, aquila, instruments }
+  /**
+   * The aquila in braille, for a terminal that draws no pictures: a sharp silhouette in the
+   * emblem's own colour, from the chosen picture's pixmap or the mod's own; rows keep the
+   * picture's shape (a cell is twice as tall as wide). Null where the surface has no Raster.
+   */
+  const aquilaDots = (width: number, pix: Pixmap | null = null): { element: JSX.Element; rows: number } | null => {
+    const { Raster } = term
+    if (Raster === undefined) return null
+    const source = pix ?? AQUILA_PIXMAP
+    const rows = Math.max(3, Math.round((width * source.h) / (2 * source.w)))
+    return { element: <Raster key="crest" columns={width} rows={rows} cells={brailleCells(source, width, rows)} />, rows }
+  }
+
+  /** A photograph in half blocks at `columns` × `rows`, for a terminal that draws no pictures. */
+  const picture = (key: string, pix: Pixmap, columns: number, rows: number): JSX.Element | null => {
+    const { Raster } = term
+    if (Raster === undefined) return null
+    return <Raster key={key} columns={columns} rows={rows} cells={halfBlockCells(pix, columns, rows)} />
+  }
+
+  return { panel, crest, strip, gauge, keys, edge, cog, aquila, aquilaDots, picture, instruments }
 }

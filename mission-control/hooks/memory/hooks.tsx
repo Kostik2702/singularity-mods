@@ -5,7 +5,7 @@ import type { Alerts, HookInjection, MbCall, Usage } from '../../types'
 import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath, parseSearchOutput, shortEvent } from '../lib/parse'
 import type { MbInvocation } from '../lib/parse'
 import { BOOT_BLESS_MS, BOOT_MS, BOOT_STEP_MS, bootElapsed } from '../lib/boot'
-import { drawsPictures } from '../lib/terminal'
+import { drawsPictures, loadPixmap } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { drawMemoryPane } from './pane'
@@ -375,9 +375,11 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
   // The Memory tab: a dark surface filling the column, drawn by pane.tsx from the session's figures.
   on('ui.render', { component: 'Pane', requestId: MEMORY_PANE }, async ($, e) => {
     const s = await memoryData($)
-    // The purity seal only where the terminal draws pictures.
-    const seal = sealFile !== null && (await drawsPictures($)) ? sealFile : null
-    return drawMemoryPane($.ui.resolve(e), { ...s, sealFile: seal }, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
+    // The purity seal as a picture where the terminal draws them, else its pixmap in half blocks.
+    const pictures = sealFile !== null && (await drawsPictures($))
+    const seal = pictures ? sealFile : null
+    const sealPix = sealFile !== null && !pictures ? await loadPixmap($, sealFile) : null
+    return drawMemoryPane($.ui.resolve(e), { ...s, sealFile: seal, sealPix }, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (

@@ -4,6 +4,7 @@ import type { Action, AgentPhase, AgentRow } from '../../types'
 import { COG, PORTRAIT, cells, isWarped, slateKit, stamp } from '../lib/frame'
 import { fmtTokens } from '../lib/parse'
 import { thoughtFor } from '../lib/thoughts'
+import type { Pixmap } from '../lib/pixmap'
 import { CLASSIC, bannerLine, rankOf, themedRule } from '../lib/theme'
 import type { Slate, Theme } from '../lib/theme'
 import { fmtDur, plural } from '../lib/viz'
@@ -31,6 +32,9 @@ export type AgentsPaneData = {
   contextPercent?: number | null
   /** Ranks' portraits found (the `rankPortraits` option) by slug, `magister` for main; pictures only. */
   portraits?: Record<string, string>
+  /** Where the terminal draws no pictures: the chosen crest's pixmap and the portraits' pixmaps, by slug. */
+  crestPix?: Pixmap | null
+  portraitPix?: Record<string, Pixmap>
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -428,7 +432,9 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
   // The crest: the detailed aquila as a picture where the terminal draws pictures,
   // else the block one; only on a tab tall enough to spare the rows.
   if (rows >= CREST_MIN_ROWS) {
-    const picture = d.pictures === true ? kit.aquila(inner, d.crestFile ?? null) : null
+    // Where the terminal draws no pictures, the aquila in braille (the chosen one's pixmap,
+    // or the mod's own); the block glyphs only where the surface has no Raster at all.
+    const picture = d.pictures === true ? kit.aquila(inner, d.crestFile ?? null) : kit.aquilaDots(inner, d.crestPix ?? null)
     if (picture !== null) {
       out.push(picture.element)
       taller += picture.rows - 1
@@ -522,8 +528,15 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     // A rank's portrait, where one was chosen: it hangs on the tree's branch before the card.
     const slug = isMain ? 'magister' : (rankOf(t, row.type)?.slug ?? null)
     const portrait = slug === null ? undefined : d.portraits?.[slug]
+    const portraitPix = slug === null ? undefined : d.portraitPix?.[slug]
     const { Image } = table as Partial<ElementTable<'terminal'>>
-    if (portrait !== undefined && Image !== undefined && width - PORTRAIT.columns - 1 >= 24) {
+    const face =
+      portrait !== undefined && Image !== undefined ? (
+        <Image source={{ file: portrait, format: 'png' }} columns={PORTRAIT.columns} rows={PORTRAIT.rows} alt={rankIcon(row, t) ?? '✠'} />
+      ) : portraitPix !== undefined ? (
+        kit.picture(`portrait-${row.id}`, portraitPix, PORTRAIT.columns, PORTRAIT.rows)
+      ) : null
+    if (face !== null && width - PORTRAIT.columns - 1 >= 24) {
       const card = kit.panel({
         style: isMain ? 'double' : 'heavy',
         width: width - PORTRAIT.columns - 1,
@@ -537,7 +550,7 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
         <Box flexDirection="row">
           {isMain ? '' : <Box flexDirection="column">{leads.map(l => <Text color={c.muted}>{l}</Text>)}</Box>}
           <Box width={PORTRAIT.columns + 1} flexShrink={0}>
-            <Image source={{ file: portrait, format: 'png' }} columns={PORTRAIT.columns} rows={PORTRAIT.rows} alt={rankIcon(row, t) ?? '✠'} />
+            {face}
           </Box>
           <Box flexDirection="column">{card}</Box>
         </Box>,

@@ -4,7 +4,8 @@ import type { On, TurnStepResult } from 'claude-code'
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import { describeAction, launchedVerb } from '../lib/actions'
-import { drawsPictures, listPortraits } from '../lib/terminal'
+import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
+import type { Pixmap } from '../lib/pixmap'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
@@ -122,6 +123,16 @@ export function registerMission(on: On, theme: Theme, crestFile: string | null =
   // The Agents tab: drawn by pane.tsx from the rows and the feed.
   on('ui.render', { component: 'Pane', requestId: AGENTS_PANE }, async ($, e) => {
     const now = await $.clock.now()
+    const pictures = await drawsPictures($)
+    const portraits = portraitsDir !== null ? await listPortraits($, portraitsDir) : {}
+    // Where the terminal draws no pictures: the pixmaps beside them, laid into cells.
+    const portraitPix: Record<string, Pixmap> = {}
+    if (!pictures) {
+      for (const [slug, file] of Object.entries(portraits)) {
+        const pix = await loadPixmap($, file)
+        if (pix !== null) portraitPix[slug] = pix
+      }
+    }
     const data = {
       agents: await read($, agentsA),
       actions: await read($, actionsA),
@@ -129,9 +140,11 @@ export function registerMission(on: On, theme: Theme, crestFile: string | null =
       now,
       viewAgentId: e.props.view.agentId ?? null,
       jobsRunning: runningShown(await read($, jobsA), now).length,
-      pictures: await drawsPictures($),
+      pictures,
       crestFile,
-      portraits: portraitsDir !== null && (await drawsPictures($)) ? await listPortraits($, portraitsDir) : {},
+      portraits: pictures ? portraits : {},
+      crestPix: !pictures && crestFile !== null ? await loadPixmap($, crestFile) : null,
+      portraitPix,
       contextPercent: (await read($, usageA))?.percent ?? null,
     }
     return drawAgentsPane($.ui.resolve(e), data, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
