@@ -4,6 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import type { Alerts, HookInjection, MbCall, Usage } from '../../types'
 import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath, parseSearchOutput, shortEvent } from '../lib/parse'
 import type { MbInvocation } from '../lib/parse'
+import { BOOT_BLESS_MS, BOOT_MS, BOOT_STEP_MS, bootElapsed } from '../lib/boot'
 import { drawsPictures } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
@@ -225,7 +226,9 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
     const isPane = await isPaneUp($)
     const s = await memoryData($)
     const items = [...hardAlerts(s.usage, s.alerts), ...(isPane || (await read($, quietA)) ? [] : softAlerts(s.alerts))]
-    if (isPane && items.length === 0) return next(e)
+    // With the tab up and nothing alarming the band yields, unless the awakening plays.
+    const awakening = e.surface === 'terminal' && theme.slate !== null && bootElapsed(await $.clock.now()) !== null
+    if (isPane && items.length === 0 && !awakening) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const events = byEvent(s.hooks).map(ev => `${shortEvent(ev.event)} ${fmtTokens(ev.tokens)}`).join(' · ')
     const last = s.turns.at(-1)
@@ -233,6 +236,48 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
     // The slate's band, in the status line's manner: each part opens on a brass plate,
     // its figures follow in amber, the alerts on a plate of their own colour.
     const slate = e.surface === 'terminal' ? theme.slate : null
+    // The awakening plays first, whatever the tab: the boot log of the cogitator.
+    const booting = slate === null ? null : bootElapsed(await $.clock.now())
+    if (slate !== null && booting !== null) {
+      const fill = Math.min(1, booting / (BOOT_BLESS_MS - 300))
+      const width = 24
+      const full = Math.round(fill * width)
+      const alarms = hardAlerts(s.usage, s.alerts).length + softAlerts(s.alerts).length
+      const steps = [
+        'литания пуска прочитана',
+        `архивы вскрыты · хуки ≈${fmtTokens(sum(s.hooks))}`,
+        `CLAUDE.md ${s.claudeMd.length > 0 ? fmtTokens(sum(s.claudeMd)) : '?'}`,
+        'легион построен',
+        alarms === 0 ? 'тревог нет' : `тревог: ${alarms}`,
+      ].slice(0, Math.min(5, Math.floor(booting / BOOT_STEP_MS) + 1))
+      const blessed = booting >= BOOT_BLESS_MS
+      return (
+        <Box flexDirection="column">
+          <Text wrap="truncate-end">
+            <Text backgroundColor={blessed ? pal.accent : slate.frame} color={pal.surface} bold>
+              {blessed ? ' ✠ ОМНИССИЯ БЛАГОСЛОВЛЯЕТ ✠ ' : ' +++ ИНИЦИАЦИЯ ДУХА МАШИНЫ +++ '}
+            </Text>
+            <Text> </Text>
+            <Text color={pal.accent}>{'█'.repeat(full)}</Text>
+            <Text color={pal.track}>{'█'.repeat(width - full)}</Text>
+            <Text color={pal.ink} bold>
+              {' '}
+              {Math.round(fill * 100)}%
+            </Text>
+            <Text color={pal.muted}> · {Math.max(0, Math.ceil((BOOT_MS - booting) / 1000))}с</Text>
+          </Text>
+          <Text wrap="truncate-end">
+            {steps.map((step, i) => (
+              <Text>
+                <Text color={pal.muted}>{i > 0 ? ' · ' : ''}</Text>
+                <Text color={pal.good}>{theme.icons.ok} </Text>
+                <Text color={i === steps.length - 1 && !blessed ? pal.ink : pal.ink2}>{step}</Text>
+              </Text>
+            ))}
+          </Text>
+        </Box>
+      )
+    }
     if (slate !== null) {
       const plate = (text: string, ground: string = slate.frame) => (
         <Text backgroundColor={ground} color={pal.surface} bold>

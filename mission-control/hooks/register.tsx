@@ -16,6 +16,7 @@ import {
 } from './jobs/model'
 import type { OutputRead } from './jobs/model'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
+import { BOOT_MS, markBoot } from './lib/boot'
 import { cogCells } from './lib/cog'
 import { COG, SKULL, cogAngle, cogPalette, skullFrame } from './lib/frame'
 import { drawsPictures } from './lib/terminal'
@@ -426,6 +427,22 @@ export const register: Register = (on, options) => {
   const sealFile = typeof sealOpt === 'string' && sealOpt.trim().length > 0 ? sealOpt.trim() : null
 
   on('session.start', async ($, e, next) => {
+    // The slate's awakening: the band plays the cogitator's boot for a few seconds, redrawn
+    // four times a second, then the timer stops itself.
+    if (theme.slate !== null) {
+      try {
+        const began = await $.clock.now()
+        markBoot(began)
+        const timer = $.clock.every(250, () => {
+          $.ui.invalidate('ui.render')
+          void $.clock.now().then(now => {
+            if (now - began > BOOT_MS + 250) timer.cancel()
+          })
+        })
+      } catch {
+        // no clock bound: the band draws as always
+      }
+    }
     // The tabs open first and on their own, so a registration that fails below cannot keep
     // them shut. Memory first, Agents last: the tab opened last is the one on screen (seen
     // live in a 170-column terminal), and mission control is what the person opens the

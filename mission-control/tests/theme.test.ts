@@ -197,3 +197,45 @@ test('the warhammer band above the prompt opens on plates, in the status line’
   expect(shown).not.toContain('│')
   await ui.unmount()
 })
+
+test('the awakening: the band plays the cogitator’s boot after the session starts, then the archives', WARHAMMER_OPTIONS, async ($, on) => {
+  const engine = engineBeneath(on)
+  await $.session.start({ cwd: '/proj', surface: 'terminal' as const, isInteractive: true })
+  const band = () =>
+    $.ui.mount({
+      plugin: 'mission-control',
+      surface: 'terminal',
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 160, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+    })
+  await engine.clock.advance(1300)
+  let ui = await band()
+  let shown = screen(await ui.drawn())
+  expect(shown).toContain('+++ ИНИЦИАЦИЯ ДУХА МАШИНЫ +++')
+  expect(shown).toContain('литания пуска прочитана · ☩ архивы вскрыты')
+  expect(shown).not.toContain('легион построен')
+  await ui.unmount()
+  await engine.clock.advance(2500)
+  ui = await band()
+  shown = screen(await ui.drawn())
+  expect(shown).toContain('✠ ОМНИССИЯ БЛАГОСЛОВЛЯЕТ ✠')
+  expect(shown).toContain('легион построен')
+  await ui.unmount()
+  await engine.clock.advance(2000)
+  ui = await band()
+  expect(screen(await ui.drawn())).toContain(' АРХИВЫ  хуки ≈')
+  await ui.unmount()
+})
+
+test('the classic look has no awakening', async ($, on) => {
+  engineBeneath(on)
+  await $.session.start({ cwd: '/proj', surface: 'terminal' as const, isInteractive: true })
+  const ui = await $.ui.mount({
+    plugin: 'mission-control',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 160, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  })
+  expect(screen(await ui.drawn())).not.toContain('ИНИЦИАЦИЯ')
+  await ui.unmount()
+})
