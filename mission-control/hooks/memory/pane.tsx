@@ -2,7 +2,7 @@ import type { ElementTable, RenderChildren } from 'claude-code'
 
 import type { Alerts, ClaudeMdFile, HookInjection, MbCall, TurnRow, Usage } from '../../types'
 import { fmtTokens } from '../lib/parse'
-import { cells, slateKit, stamp } from '../lib/frame'
+import { SEAL, cells, slateKit, stamp } from '../lib/frame'
 import { CLASSIC, bannerLine, themedRule } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { allocate, bigText, fmtDur, meter, pct, plural, sparkline } from '../lib/viz'
@@ -22,6 +22,8 @@ export type MemoryPaneData = {
   turn: number
   lastTurnEndAt: number | null
   now: number
+  /** A purity seal's PNG (the `puritySeal` option) where the terminal draws pictures; absent, none. */
+  sealFile?: string | null
 }
 
 type Source = { name: string; tokens: number; color: string; isPulled: boolean }
@@ -58,6 +60,11 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   const kit = slate === null ? null : slateKit(table, t, slate)
   // Cells each block is laid out to: the column, or the inside of a slate's frame.
   const span = slate === null ? inner : inner - 4
+  // A purity seal hangs at the head's right: the litany, the strip and the dial make room.
+  const { Image } = table as Partial<ElementTable<'terminal'>>
+  const sealOn = slate !== null && d.sealFile != null && Image !== undefined && inner >= 36
+  const beside = sealOn ? SEAL.columns + 1 : 0
+  const heroSpan = span - beside
 
   const section = (title: string, body: RenderChildren) => {
     const r = themedRule(t, title, inner)
@@ -121,7 +128,7 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
   // ── Hero ────────────────────────────────────────────────
   const big = bigText(fmtTokens(memTotal))
   // On a slate the figure sits centred on its dial.
-  const centre = (line: string) => (slate === null ? line : ' '.repeat(Math.max(0, Math.floor((span - cells(line)) / 2))) + line)
+  const centre = (line: string) => (slate === null ? line : ' '.repeat(Math.max(0, Math.floor((heroSpan - cells(line)) / 2))) + line)
   const heroRows: JSX.Element[] = [
     ...big.map(line => (
       <Text color={slate === null ? pal.ink : pal.accent} bold>
@@ -347,20 +354,30 @@ export function drawMemoryPane(table: ElementTable, d: MemoryPaneData, cols: num
 
   if (slate !== null && kit !== null) {
     // The slate: the crest over the litany and the strip, the figure on a dial in a double
-    // frame, then each section a reliquary of its own, its stamp on the bottom edge.
+    // frame (a purity seal hanging beside them, where one is chosen), then each section a
+    // reliquary of its own, its stamp on the bottom edge.
     const reliquary = (title: string, list: readonly JSX.Element[], n: number, meta = '') =>
       kit.panel({ style: 'light', width: inner, title: title.toUpperCase(), meta, foot: stamp('АРХ', n * 977 + d.turn), rows: list, titleColor: pal.ink2 })
     const ctxMeta = ctx === null ? '' : `${Math.round(ctx)}%`
     return (
       <Box flexDirection="column" backgroundColor={pal.surface} paddingX={1} paddingTop={1} width={cols} minHeight={Math.max(1, rows)}>
         {rows >= 50 ? kit.crest(inner) : ''}
-        {banner !== null && (
-          <Text color={pal.accent} bold wrap="truncate-end">
-            {banner}
-          </Text>
-        )}
-        {kit.strip(slate.strip.memory, `ход ${d.turn}`, inner)}
-        {kit.panel({ style: 'double', width: inner, title: `✠ ${slate.memPlate}`, rows: heroRows })}
+        <Box flexDirection="row">
+          <Box flexDirection="column" width={inner - beside}>
+            <Text color={pal.accent} bold wrap="truncate-end">
+              {bannerLine(t, 'memory', inner - beside) ?? ''}
+            </Text>
+            {kit.strip(slate.strip.memory, `ход ${d.turn}`, inner - beside)}
+            {kit.panel({ style: 'double', width: inner - beside, title: `✠ ${slate.memPlate}`, rows: heroRows })}
+          </Box>
+          {sealOn && Image !== undefined && d.sealFile != null ? (
+            <Box width={beside} paddingLeft={1} flexShrink={0}>
+              <Image source={{ file: d.sealFile, format: 'png' }} columns={SEAL.columns} rows={SEAL.rows} alt="✠" />
+            </Box>
+          ) : (
+            ''
+          )}
+        </Box>
         {reliquary(sec.sources, sourcesRows, 1, fmtTokens(memTotal))}
         {reliquary(sec.cache, cacheRows, 2, hitRate === null ? '' : `${Math.round(hitRate)}%`)}
         {reliquary(sec.search, searchRows, 3, `×${searches.length}`)}

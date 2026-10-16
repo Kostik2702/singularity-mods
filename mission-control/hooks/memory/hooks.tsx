@@ -4,6 +4,7 @@ import type { EngineInterface, On } from 'claude-code'
 import type { Alerts, HookInjection, MbCall, Usage } from '../../types'
 import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath, parseSearchOutput, shortEvent } from '../lib/parse'
 import type { MbInvocation } from '../lib/parse'
+import { drawsPictures } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { drawMemoryPane } from './pane'
@@ -151,7 +152,7 @@ async function memoryData($: $) {
   return { hooks, calls, reads, claudeMd, turns, usage, alerts, searches, hits, best, codeQueries, shown, turn, lastTurnEndAt, now }
 }
 
-export function registerMemory(on: On, theme: Theme): void {
+export function registerMemory(on: On, theme: Theme, sealFile: string | null = null): void {
   const pal = theme.colors
   on('prompt.submit', async ($, e, next) => {
     await update($, turnA, n => n + 1)
@@ -276,7 +277,9 @@ export function registerMemory(on: On, theme: Theme): void {
   // The Memory tab: a dark surface filling the column, drawn by pane.tsx from the session's figures.
   on('ui.render', { component: 'Pane', requestId: MEMORY_PANE }, async ($, e) => {
     const s = await memoryData($)
-    return drawMemoryPane($.ui.resolve(e), s, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
+    // The purity seal only where the terminal draws pictures.
+    const seal = sealFile !== null && (await drawsPictures($)) ? sealFile : null
+    return drawMemoryPane($.ui.resolve(e), { ...s, sealFile: seal }, e.props.bodyColumns, e.props.scroll.bodyRows, forSurface(theme, e.surface))
   }).catch(($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     return (

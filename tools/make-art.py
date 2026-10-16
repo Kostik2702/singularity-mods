@@ -21,6 +21,10 @@ Usage: python tools/make-art.py   (from the repo root; needs Pillow)
     cutout makes one): SKULL_FRAMES frames of it hovering up and down, swaying a little,
     its cyan optics pulsing, as frame-00.png ... in terminal/art/servo-skull/ by default,
     git-ignored like the crest. The Processes tab shows them in place of the cog.
+
+  python tools/make-art.py --seal <cut-out PNG> [--out <png>]
+    A purity seal for the Archives tab from a picture already cut out: cropped and padded
+    to 5 : 24 (a box of 5 x 12 cells), terminal/art/purity-seal.png by default, git-ignored.
 """
 import base64
 import io
@@ -201,7 +205,33 @@ def servo_frames(source: str, out_dir: str) -> int:
     return 0
 
 
+SEAL_SIZE = (200, 960)    # 5 : 24, a box of 5 x 12 terminal cells
+
+
+def seal(source: str, out: str) -> int:
+    """A purity seal cropped to its subject and padded to SEAL_SIZE, hanging from the top."""
+    img = Image.open(source).convert('RGBA')
+    box = img.getchannel('A').point(lambda v: 255 if v > 24 else 0).getbbox()
+    if box is None:
+        print('make-art: the picture has no opaque subject (cut it out first)', file=sys.stderr)
+        return 1
+    img = img.crop(box)
+    W2, H2 = SEAL_SIZE
+    scale = min(W2 / img.width, H2 / img.height)
+    img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    canvas = Image.new('RGBA', SEAL_SIZE, (0, 0, 0, 0))
+    canvas.alpha_composite(img, ((W2 - img.width) // 2, 0))
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    canvas.save(out, optimize=True)
+    print(os.path.abspath(out), canvas.size)
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1] == '--seal':
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out' else os.path.join(root, 'terminal', 'art', 'purity-seal.png')
+        return seal(sys.argv[2], out)
     if len(sys.argv) >= 3 and sys.argv[1] == '--servo-frames':
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         out = sys.argv[4] if len(sys.argv) >= 5 and sys.argv[3] == '--out-dir' else os.path.join(root, 'terminal', 'art', 'servo-skull')

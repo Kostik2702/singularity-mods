@@ -421,6 +421,9 @@ export const register: Register = (on, options) => {
   // A servo-skull's frames the person chose (tools/install.mjs --servo-skull): a folder.
   const skull = (options as Record<string, unknown> | undefined)?.servoSkull
   const skullDir = typeof skull === 'string' && skull.trim().length > 0 ? skull.trim() : null
+  // A purity seal the person chose (tools/install.mjs --purity-seal): a PNG.
+  const sealOpt = (options as Record<string, unknown> | undefined)?.puritySeal
+  const sealFile = typeof sealOpt === 'string' && sealOpt.trim().length > 0 ? sealOpt.trim() : null
 
   on('session.start', async ($, e, next) => {
     // The tabs open first and on their own, so a registration that fails below cannot keep
@@ -630,7 +633,7 @@ export const register: Register = (on, options) => {
   })
 
   registerMission(on, theme, crestFile)
-  registerMemory(on, theme)
+  registerMemory(on, theme, sealFile)
   registerJobs(on, theme, skullDir)
   registerChrome(on, theme)
 }

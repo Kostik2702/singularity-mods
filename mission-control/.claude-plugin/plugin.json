@@ -28,6 +28,12 @@
       "title": "Сервочереп",
       "description": "Абсолютный путь к папке с кадрами frame-00.png… сервочерепа, который вкладка «Обряды» покажет вместо шестерни (Ghostty, kitty). Пусто — шестерня. Ставит tools/install.mjs --servo-skull <url>.",
       "default": ""
+    },
+    "puritySeal": {
+      "type": "string",
+      "title": "Печать чистоты",
+      "description": "Абсолютный путь к PNG печати чистоты (5 : 24), которую вкладка «Архивы» повесит сверху справа (Ghostty, kitty). Пусто — без неё. Ставит tools/install.mjs --purity-seal <url>.",
+      "default": ""
     }
   }
 }

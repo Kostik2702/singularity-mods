@@ -63,6 +63,7 @@ Two more pieces finish the warhammer look, outside the mod's own drawing:
 | Pixel art | `terminal/art/aquila-crest.png`, embedded in `hooks/lib/art.ts` by `tools/make-art.py` | the mod's own aquila on the Agents tab: drawn here in the emblem's manner, not a copy of any artwork |
 | A crest you choose | the `aquilaImage` option: a PNG path | any emblem picture instead of the mod's own. `node tools/install.mjs --aquila <url or file>` cuts the emblem out of the picture (a gold or amber emblem on a dark ground: its own pixels kept, the ground made transparent, padded to 3 : 1; Python 3 with Pillow) into `terminal/art/aquila-custom.png` and points the option at it. That file is git-ignored on purpose: someone else's artwork stays on your machine and is never committed; run the same command on each machine. `--aquila none` goes back to the mod's own |
 | A servo-skull you choose | the `servoSkull` option: a folder of frames | a servo-skull on Обряды in place of the cog, hovering, swaying a little, its optics pulsing, whenever the tab is on screen (pictures only: Ghostty, kitty; elsewhere the cog). `node tools/install.mjs --servo-skull <url or file>` cuts the picture out (`imgqa cutout` with its ML venv, or the `rembg` CLI: `python3 -m pip install "rembg[cpu,cli]"`), animates it into `terminal/art/servo-skull/frame-00.png …` (git-ignored, like the crest) and sets the option. `--servo-skull none` brings the cog back |
+| A purity seal you choose | the `puritySeal` option: a PNG | a purity seal hanging at the top right of Архивы, beside the litany, the strip and the dial (pictures only). `node tools/install.mjs --purity-seal <url or file>` cuts it out as for the servo-skull and pads it to 5 : 24 into `terminal/art/purity-seal.png` (git-ignored). `--purity-seal none` takes it down |
 
 `node tools/install.mjs` puts all three in place (see Install).
 
@@ -82,6 +83,7 @@ node tools/install.mjs --animated   # also the living screen: a rolling refresh 
 node tools/install.mjs --static     # back to the still screen (the default; a run with neither keeps the last choice)
 node tools/install.mjs --aquila <url or file>  # the Agents tab's crest from a picture you choose (see below)
 node tools/install.mjs --servo-skull <url or file>  # a hovering servo-skull on Обряды in place of the cog (see below)
+node tools/install.mjs --purity-seal <url or file>  # a purity seal hanging at the top right of Архивы (see below)
 node tools/install.mjs --no-ghostty # Claude Code only (Windows: Ghostty is skipped by itself)
 node tools/install.mjs --dry-run    # say what would change, write nothing
 node tools/install.mjs --uninstall  # take the look off; the mod stays loaded, in classic

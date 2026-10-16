@@ -205,3 +205,20 @@ test('Обряды: without pictures the cog stays, whatever was chosen', SKULL_
   expect(tree).not.toContain('servo-skull')
   await ui.unmount()
 })
+
+test('Архивы: a chosen purity seal hangs at the head’s right, the dial making room', { options: { theme: 'warhammer', puritySeal: '/Users/me/purity-seal.png' } }, async ($, on) => {
+  engineBeneath(on, { env: { TERM_PROGRAM: 'ghostty' } })
+  const ui = await $.ui.mount({
+    plugin: 'mission-control',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'mem-meter',
+    props: { title: 'Архивы', isFocused: false, bodyColumns: 56, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  const drawn = await ui.drawn()
+  expect(JSON.stringify(drawn)).toContain('"file":"/Users/me/purity-seal.png"')
+  // The dial is narrower by the seal's 5 cells and a gap: its top edge ends 6 cells early.
+  const dial = screen(drawn).split('\n').find(row => row.includes('ПРИНЯТО ИЗ АРХИВОВ')) ?? ''
+  expect([...dial.replace(/▒+$/, '').trimEnd()].length).toBe(56 - 1 - 6)
+  await ui.unmount()
+})

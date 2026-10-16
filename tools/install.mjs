@@ -18,6 +18,10 @@
 //                                       the picture cut out (imgqa cutout, or the rembg CLI)
 //                                       and animated locally into terminal/art/servo-skull/,
 //                                       never committed; `--servo-skull none` brings the cog back
+//   node tools/install.mjs --purity-seal <url or file>
+//                                       a purity seal hanging at the top right of Архивы, cut
+//                                       out locally into terminal/art/purity-seal.png, never
+//                                       committed; `--purity-seal none` takes it down
 //   node tools/install.mjs --no-ghostty Claude Code only
 //   node tools/install.mjs --uninstall  take the look off (the mod stays loaded)
 //   node tools/install.mjs --dry-run    say what would change, write nothing
@@ -60,6 +64,9 @@ const CUSTOM_CREST = path.join(ROOT, 'terminal', 'art', 'aquila-custom.png')
 const skullAt = argv.indexOf('--servo-skull')
 const skullSource = skullAt >= 0 ? (argv[skullAt + 1] ?? '') : null
 const SKULL_DIR = path.join(ROOT, 'terminal', 'art', 'servo-skull')
+const sealAt = argv.indexOf('--purity-seal')
+const sealSource = sealAt >= 0 ? (argv[sealAt + 1] ?? '') : null
+const SEAL_FILE = path.join(ROOT, 'terminal', 'art', 'purity-seal.png')
 const said = []
 
 function say(line) {
@@ -184,6 +191,28 @@ async function skullFrames() {
   return SKULL_DIR
 }
 
+/** The purity seal Архивы shows: cut out now, the one cut before, or none after `--purity-seal none`. */
+async function sealPicture() {
+  if (sealSource === null) return fs.existsSync(SEAL_FILE) ? SEAL_FILE : null
+  if (sealSource === '' || sealSource === 'none') {
+    if (!isDry && fs.existsSync(SEAL_FILE)) fs.rmSync(SEAL_FILE)
+    say('Печать чистоты: снята')
+    return null
+  }
+  const py = pythonWithPillow()
+  if (py === null) throw new Error('для --purity-seal нужен Python 3 с Pillow: python3 -m pip install pillow (или укажи PYTHON=<путь>)')
+  say(`Печать чистоты: вырезаю ${sealSource}`)
+  if (isDry) return SEAL_FILE
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'purity-seal-'))
+  try {
+    const cut = cutOut(await pictureAsPng(sealSource, work, py), work)
+    execFileSync(py, [path.join(ROOT, 'tools', 'make-art.py'), '--seal', cut, '--out', SEAL_FILE], { stdio: 'inherit' })
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true })
+  }
+  return SEAL_FILE
+}
+
 // ── Claude Code ─────────────────────────────────────────────────────────────
 
 function claudeDir() {
@@ -198,7 +227,7 @@ function pluginDirs(value) {
     .filter(s => s.length > 0)
 }
 
-function setupClaude(crest, skull) {
+function setupClaude(crest, skull, sealFile) {
   const dir = claudeDir()
   const file = path.join(dir, 'settings.json')
   const statePath = path.join(dir, 'singularity-mods.install.json')
@@ -228,6 +257,7 @@ function setupClaude(crest, skull) {
     }
     if (opts !== undefined && 'aquilaImage' in opts) delete opts.aquilaImage
     if (opts !== undefined && 'servoSkull' in opts) delete opts.servoSkull
+    if (opts !== undefined && 'puritySeal' in opts) delete opts.puritySeal
     write(file, `${JSON.stringify(settings, null, 2)}\n`)
     if (!isDry && fs.existsSync(statePath)) fs.rmSync(statePath)
     return
@@ -254,6 +284,10 @@ function setupClaude(crest, skull) {
     settings.pluginConfigs['mission-control'].options.servoSkull = skull
     say(`  mission-control: servoSkull = ${skull}`)
   } else delete settings.pluginConfigs['mission-control'].options.servoSkull
+  if (sealFile !== null) {
+    settings.pluginConfigs['mission-control'].options.puritySeal = sealFile
+    say(`  mission-control: puritySeal = ${sealFile}`)
+  } else delete settings.pluginConfigs['mission-control'].options.puritySeal
 
   if (settings.theme !== CLAUDE_THEME) {
     state.previousTheme = settings.theme ?? null
@@ -357,7 +391,7 @@ function setupGhostty() {
 
 try {
   if (!fs.existsSync(path.join(MOD_DIR, '.claude-plugin', 'plugin.json'))) throw new Error(`нет мода в ${MOD_DIR}`)
-  setupClaude(isUninstall ? null : crestPicture(), isUninstall ? null : await skullFrames())
+  setupClaude(isUninstall ? null : crestPicture(), isUninstall ? null : await skullFrames(), isUninstall ? null : await sealPicture())
   if (withGhostty) setupGhostty()
   say('')
   say(isDry ? 'Пробный прогон: ничего не записано.' : 'Готово. Перезапусти Claude Code и перечитай конфиг Ghostty (cmd+shift+, / ctrl+shift+,).')
