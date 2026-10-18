@@ -27,7 +27,8 @@ import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { leadConfigOf } from './lead/config'
-import { EMPTY_LEAD } from './lead/ledger'
+import { EMPTY_LEAD, pushNews } from './lead/ledger'
+import { watchStep } from './lead/watch'
 import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
 import { registerChrome } from './chrome/hooks'
@@ -505,6 +506,37 @@ async function tick($: $): Promise<void> {
     if (needsTick(await read($, agentsA), await $.clock.now())) $.ui.invalidate('ui.render')
   } catch {
     // a missed redraw is drawn by the next tick
+  }
+  await watch($)
+}
+
+/**
+ * The watchdog (spec 6.5), on the same tick (it runs whether or not anything is drawn): new alarms go to the
+ * lead's news; an idle lead is also woken, at most once per 10 minutes. Fails open: a throw is told once.
+ */
+async function watch($: $): Promise<void> {
+  try {
+    const rows = await read($, agentsA)
+    const now = await $.clock.now()
+    const held = await read($, leadA)
+    if (watchStep(held, rows, now).lead === held) return
+    const out: { wake: string | null } = { wake: null }
+    await update($, leadA, cur => {
+      const step = watchStep(cur, rows, now)
+      out.wake = step.wake
+      return step.lead
+    })
+    if (out.wake !== null) await $.prompt.submit({ text: out.wake })
+  } catch (err) {
+    try {
+      await update($, leadA, cur =>
+        cur.flags.includes('guard-error')
+          ? cur
+          : { ...pushNews(cur, `сторож упал: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
+      )
+    } catch {
+      // nothing more to do: the next tick tries again
+    }
   }
 }
 

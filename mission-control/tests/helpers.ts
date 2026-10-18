@@ -136,7 +136,12 @@ export function engineBeneath(
   const spawns: SpawnAnswer[] = [...(opts.spawns ?? ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'])]
   const texts: string[] = []
   let listed: AgentInfo[] = []
-  on('prompt.submit', (_$, e) => (opts.refuseSubmit === true ? { drop: 'blocked' } : { text: e.text }))
+  /** The texts a plugin (not the person) submitted, as they reached the engine. */
+  const submitted: string[] = []
+  on('prompt.submit', (_$, e) => {
+    if (e.origin.kind === 'plugin') submitted.push(e.text)
+    return opts.refuseSubmit === true ? { drop: 'blocked' } : { text: e.text }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer, usage: e.usage }))
   /** What reached the engine beneath the plugin: the spawn inputs after every hook above it. */
@@ -208,6 +213,7 @@ export function engineBeneath(
   return {
     clock,
     reached,
+    submitted,
     stepsReached,
     /** The texts $.ui.toast was called with. */
     toasts,
