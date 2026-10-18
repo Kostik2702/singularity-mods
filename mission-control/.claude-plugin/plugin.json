@@ -1,6 +1,6 @@
 {
   "name": "mission-control",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Sidebar mission control for Claude Code: what the main agent and every subagent is doing and why, and how much context arrives from memory",
   "author": {
     "name": "Kostyantyn Hrytsuk"
@@ -51,6 +51,40 @@
       "title": "Портреты чинов",
       "description": "Абсолютный путь к папке портретов чинов (<чин>.png: inquisitor, techpriest, commissar, arbitrator, chronicler, scout, strategist, augur, guardsman, magos, servitor; magister — главный), которые «Легион» повесит на ветке перед карточкой (Ghostty, kitty). Ставит tools/install.mjs --portrait <чин>=<url>.",
       "default": ""
+    },
+    "budgetMode": {
+      "type": "string",
+      "title": "Бюджет: режим",
+      "description": "observe — лимиты только считаются и попадают в сводку лида; enforce — исполнитель, исчерпавший лимит, останавливается.",
+      "options": [
+        "observe",
+        "enforce"
+      ],
+      "default": "observe"
+    },
+    "sessionBudgetOE": {
+      "type": "string",
+      "title": "Бюджет сессии, OE",
+      "description": "Лимит сессии в токенах, эквивалентных входным токенам Opus (целое число). Пусто — без лимита.",
+      "default": ""
+    },
+    "runBudgetOE": {
+      "type": "string",
+      "title": "Бюджет прогона workflow, OE",
+      "description": "Лимит одного прогона workflow в токенах, эквивалентных входным токенам Opus (целое число). Пусто — без лимита.",
+      "default": ""
+    },
+    "agentBudgetOE": {
+      "type": "string",
+      "title": "Бюджет исполнителя, OE",
+      "description": "Лимит одного исполнителя в токенах, эквивалентных входным токенам Opus (целое число). Пусто — без лимита.",
+      "default": ""
+    },
+    "fableCap": {
+      "type": "string",
+      "title": "Вызовов Fable за сессию",
+      "description": "Сколько раз за сессию можно вызвать Fable (целое число больше нуля); неверное значение — 3.",
+      "default": "3"
     }
   }
 }

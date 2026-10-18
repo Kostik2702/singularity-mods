@@ -218,6 +218,31 @@ export type Job = {
   isAnnounced: boolean
 }
 
+/** The team-lead layer's ledger: OE spent, Fable calls, guard counters and the lead's unread news. */
+export type Lead = {
+  /** OE spent by each agent id; main is not here. */
+  byAgent: Record<string, number>
+  /** OE spent by each workflow run id. */
+  byRun: Record<string, number>
+  /** OE spent by the whole session, main included. */
+  session: number
+  /** OE the owner added to the session budget (`/mc budget +N`). */
+  extra: number
+  fableCalls: number
+  /** The council command name while one is open, null when closed. */
+  councilTurn: string | null
+  halted: boolean
+  solo: boolean
+  rewrites: number
+  denials: number
+  /** Lines for the lead's next digest, last 20. */
+  news: string[]
+  /** Alarms already sent, by `<alarm>:<agent>`: the time of the send. */
+  alarmsSent: Record<string, number>
+  lastWakeAt: number | null
+  flags: string[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'mission-control': {
@@ -245,6 +270,8 @@ declare module 'claude-code' {
       jobsDir: string | null
       /** The Processes tab's last `$.ui.open` outcome. */
       jobsPaneStatus: string | null
+      /** The team-lead layer's ledger and counters. */
+      lead: Lead
     }
   }
 }
