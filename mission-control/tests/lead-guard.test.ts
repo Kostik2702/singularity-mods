@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { leadConfigOf } from '../hooks/lead/config'
-import { decideSpawn } from '../hooks/lead/guard'
-import type { SpawnFacts } from '../hooks/lead/guard'
+import { decideSpawn, decideStep } from '../hooks/lead/guard'
+import type { SpawnFacts, StepFacts } from '../hooks/lead/guard'
 import { EMPTY_LEAD } from '../hooks/lead/ledger'
 import type { Lead } from '../types'
 
@@ -165,5 +165,79 @@ describe('spawn guard', () => {
         reason: 'нет строки ПОЧЕМУ FABLE:',
       })
     })
+  })
+})
+
+const BLOCK_BUDGET = '[mission-control] остановлен до запроса: бюджет исчерпан'
+const BLOCK_HALT = '[mission-control] остановлен до запроса: заморожено владельцем'
+
+const sfacts = (o: Partial<StepFacts> = {}): StepFacts => ({
+  agentId: 'a1',
+  runId: null,
+  isWorkflow: false,
+  model: 'claude-sonnet-5-5',
+  ...o,
+})
+
+describe('request guard', () => {
+  test('main is never blocked', () => {
+    const c = cfg({ mode: 'enforce', sessionBudget: 1, agentBudget: 1, runBudget: 1 })
+    const spent = lead({ session: 9e9, halted: true, byAgent: { a1: 9e9 }, byRun: { wf_1: 9e9 } })
+    expect(decideStep(sfacts({ agentId: null, runId: 'wf_1', isWorkflow: true }), spent, c)).toEqual({ kind: 'send' })
+  })
+
+  test('main never gets an effort rewrite', () => {
+    expect(decideStep(sfacts({ agentId: null, isWorkflow: true, model: 'sonnet' }), lead(), cfg())).toEqual({ kind: 'send' })
+  })
+
+  test('a spent subagent is blocked in enforce: agent, run and session', () => {
+    const c = cfg({ mode: 'enforce', agentBudget: 100, runBudget: 200, sessionBudget: 300 })
+    const block = { kind: 'block', answer: BLOCK_BUDGET }
+    expect(decideStep(sfacts(), lead({ byAgent: { a1: 100 } }), c)).toEqual(block)
+    expect(decideStep(sfacts({ runId: 'wf_1', isWorkflow: true }), lead({ byRun: { wf_1: 200 } }), c)).toEqual(block)
+    expect(decideStep(sfacts(), lead({ session: 300 }), c)).toEqual(block)
+    expect(decideStep(sfacts(), lead({ byAgent: { a1: 99 }, session: 299 }), c)).toEqual({ kind: 'send' })
+    expect(decideStep(sfacts(), lead({ byAgent: { a2: 100 } }), c)).toEqual({ kind: 'send' })
+  })
+
+  test('halted blocks every subagent', () => {
+    const c = cfg({ mode: 'enforce' })
+    expect(decideStep(sfacts(), lead({ halted: true }), c)).toEqual({ kind: 'block', answer: BLOCK_HALT })
+    expect(decideStep(sfacts({ agentId: 'a2', runId: 'wf_9', isWorkflow: true }), lead({ halted: true }), c)).toEqual({
+      kind: 'block',
+      answer: BLOCK_HALT,
+    })
+  })
+
+  test('a freeze wins over an exhausted budget in the answer', () => {
+    const c = cfg({ mode: 'enforce', sessionBudget: 1 })
+    expect(decideStep(sfacts(), lead({ halted: true, session: 5 }), c)).toEqual({ kind: 'block', answer: BLOCK_HALT })
+  })
+
+  test('observe never blocks on numbers', () => {
+    const spent = lead({ session: 9e9, halted: true, byAgent: { a1: 9e9 } })
+    expect(decideStep(sfacts(), spent, cfg({ sessionBudget: 1, agentBudget: 1 }))).toEqual({ kind: 'send' })
+  })
+
+  test('workflow sonnet agent gets medium effort', () => {
+    const wf = (model: string, o: Partial<StepFacts> = {}) => sfacts({ isWorkflow: true, runId: 'wf_1', model, ...o })
+    expect(decideStep(wf('sonnet'), lead(), cfg())).toEqual({ kind: 'send', effort: 'medium' })
+    expect(decideStep(wf('claude-sonnet-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'medium' })
+    expect(decideStep(wf('claude-haiku-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'low' })
+    expect(decideStep(wf('claude-opus-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'high' })
+  })
+
+  test('effort is left alone: fable, an unknown model, an effort already set, a non-workflow agent', () => {
+    const wf = (o: Partial<StepFacts>) => sfacts({ isWorkflow: true, runId: 'wf_1', ...o })
+    expect(decideStep(wf({ model: 'claude-fable-5-1' }), lead(), cfg())).toEqual({ kind: 'send' })
+    expect(decideStep(wf({ model: 'claude-test' }), lead(), cfg())).toEqual({ kind: 'send' })
+    expect(decideStep(wf({ model: 'sonnet', effort: 'xhigh' }), lead(), cfg())).toEqual({ kind: 'send' })
+    expect(decideStep(wf({ model: 'sonnet', effort: 0 }), lead(), cfg())).toEqual({ kind: 'send' })
+    expect(decideStep(sfacts({ model: 'sonnet' }), lead(), cfg())).toEqual({ kind: 'send' })
+  })
+
+  test('a block beats an effort rewrite', () => {
+    const f = sfacts({ isWorkflow: true, runId: 'wf_1', model: 'sonnet' })
+    expect(decideStep(f, lead({ halted: true }), cfg({ mode: 'enforce' }))).toMatchObject({ kind: 'block' })
   })
 })

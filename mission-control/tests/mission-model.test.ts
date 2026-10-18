@@ -11,6 +11,7 @@ import {
   applySpawn,
   applyStepEnd,
   applyStepStart,
+  applyStepUsage,
   applyToolEnd,
   applyToolStart,
   applyTurnStart,
@@ -365,5 +366,43 @@ describe('limits and timers', () => {
     const sub = applySpawn([], facts())
     expect(needsReconcile(sub, T0)).toBe(true)
     expect(needsTick(sub, T0 + SILENT_MS + 1)).toBe(false)
+  })
+})
+
+describe('a request settled (applyStepUsage)', () => {
+  const spawned = () => applySpawn([], facts({ model: 'sonnet' }))
+
+  test('the agent row takes the OE, the answering model and the effort', () => {
+    const rows = applyStepUsage(spawned(), { agentId: 'a1', oe: 1500, model: 'claude-sonnet-5-5', effort: 'medium' })
+    expect(row(rows, 'a1')).toMatchObject({ oe: 1500, model: 'claude-sonnet-5-5', effort: 'medium' })
+  })
+
+  test('the OE accumulates over requests', () => {
+    let rows = applyStepUsage(spawned(), { agentId: 'a1', oe: 1500, model: null, effort: null })
+    rows = applyStepUsage(rows, { agentId: 'a1', oe: 250, model: null, effort: null })
+    expect(row(rows, 'a1').oe).toBe(1750)
+  })
+
+  test('a missing model or effort keeps what the row has', () => {
+    let rows = applyStepUsage(spawned(), { agentId: 'a1', oe: 1, model: 'claude-sonnet-5-5', effort: 'high' })
+    rows = applyStepUsage(rows, { agentId: 'a1', oe: 1, model: null, effort: null })
+    expect(row(rows, 'a1')).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'high' })
+  })
+
+  test('a bad OE adds zero', () => {
+    const rows = applyStepUsage(spawned(), { agentId: 'a1', oe: Number.NaN, model: null, effort: null })
+    expect(row(rows, 'a1').oe).toBe(0)
+  })
+
+  test('main (agentId null) is credited on the main row; a loop with no row changes nothing', () => {
+    const rows = applyStepStart([], { agentId: null, now: T0 })
+    expect(row(applyStepUsage(rows, { agentId: null, oe: 7, model: null, effort: 'high' }), MAIN)).toMatchObject({ oe: 7, effort: 'high' })
+    expect(applyStepUsage(rows, { agentId: 'ghost', oe: 7, model: null, effort: null })).toEqual(rows)
+  })
+
+  test('the input rows are not mutated', () => {
+    const before = spawned()
+    applyStepUsage(before, { agentId: 'a1', oe: 5, model: 'x', effort: 'low' })
+    expect(row(before, 'a1').oe).toBe(0)
   })
 })

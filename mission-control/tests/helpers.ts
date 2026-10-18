@@ -2,7 +2,7 @@
 // the two ways to look at the result — the plugin's own snapshot tool (exact state;
 // a test's `$` has no state noun) and a mounted Agents tab (what the person sees).
 import { mock } from 'claude-code/testing'
-import type { AgentInfo, On } from 'claude-code'
+import type { AgentInfo, On, TurnStepResult, TurnStepServerToolUse, TurnUsage } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import type { Action, AgentRow, Job } from '../types'
@@ -22,6 +22,9 @@ export type Snapshot = {
 }
 
 type SpawnAnswer = string | { deny: string }
+
+/** What one model request beneath the plugin answers besides its text. */
+export type StepExtra = { usage?: TurnUsage; serverToolUses?: TurnStepServerToolUse[] }
 
 /** What a Bash call answers beneath the plugin: `{ result, text }`, `{ isError, text }` or `{ deny }`. */
 export type BashAnswer = Record<string, unknown>
@@ -104,6 +107,8 @@ export function engineBeneath(
     panes?: { id: string; title: string }[]
     /** The environment the plugin reads (TERM_PROGRAM and the like); empty by default. */
     env?: Record<string, string>
+    /** The model an agent.spawn answers the row with (what the engine resolved); `claude-test` by default. */
+    spawnModel?: string
   } = {},
 ) {
   const broken = opts.brokenClock
@@ -123,7 +128,11 @@ export function engineBeneath(
   })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__mission-control__${e.name}` } }))
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
+  const toasts: string[] = []
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
   const spawns: SpawnAnswer[] = [...(opts.spawns ?? ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'])]
   const texts: string[] = []
   let listed: AgentInfo[] = []
@@ -135,7 +144,7 @@ export function engineBeneath(
   on('agent.spawn', (_$, e) => {
     reached.push({ ...(e.model === undefined ? {} : { model: e.model }), prompt: e.prompt, subagentType: e.subagentType, fork: e.fork })
     const next = spawns.shift() ?? 'a-extra'
-    return typeof next === 'string' ? { model: 'claude-test', agentId: next } : { deny: next.deny }
+    return typeof next === 'string' ? { model: opts.spawnModel ?? 'claude-test', agentId: next } : { deny: next.deny }
   })
   on('agent.list', () => ({ value: listed }))
   const panes = [...(opts.panes ?? [])]
@@ -154,11 +163,29 @@ export function engineBeneath(
     if (at >= 0) panes.splice(at, 1)
     return { value: undefined }
   })
+  /** What reached the engine beneath the plugin as model requests, after every turn.step hook above it. */
+  const stepsReached: { agentId?: string; model: string; effort?: unknown }[] = []
+  const extras: StepExtra[] = []
   on('turn.step', async function* (_$, e) {
+    stepsReached.push({
+      ...(e.agentId === undefined ? {} : { agentId: e.agentId }),
+      model: e.model,
+      ...(e.effort === undefined ? {} : { effort: e.effort }),
+    })
+    const extra = extras.shift() ?? {}
     const text = texts.shift() ?? ''
+    const usage = extra.usage ?? null
     if (text.length > 0) yield { kind: 'text' as const, index: 0, text }
-    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
-    return { turnId: e.turnId, index: e.index, answer: text, toolUses: [], stopReason: 'end_turn' as const, usage: null }
+    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage }
+    return {
+      turnId: e.turnId,
+      index: e.index,
+      answer: text,
+      toolUses: [],
+      stopReason: 'end_turn' as const,
+      usage,
+      ...(extra.serverToolUses === undefined ? {} : { serverToolUses: extra.serverToolUses }),
+    }
   })
   // A pattern: Glob is not a built-in of every build, and the types refuse a name they do not list.
   on('tool.call', { tool: /^Glob$/ }, () => ({ result: { filenames: [], durationMs: 1, numFiles: 0, truncated: false }, text: '' }) as never)
@@ -181,6 +208,13 @@ export function engineBeneath(
   return {
     clock,
     reached,
+    stepsReached,
+    /** The texts $.ui.toast was called with. */
+    toasts,
+    /** Queues what the next model request answers: its usage (with the model that answered) and server tool calls. */
+    stepAnswer: (extra: StepExtra): void => {
+      extras.push(extra)
+    },
     /** Pane ids in the order $.ui.open was called. */
     opened,
     /** The title each pane was last opened under. */
@@ -245,12 +279,25 @@ export async function spawn(
   })
 }
 
-/** One model step in a loop; the plugin sees its end once the stream is read through. */
-export async function step($: Engine, agentId?: string): Promise<void> {
-  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-test', messageCount: 1, ...(agentId === undefined ? {} : { agentId }) })
-  for await (const _chunk of stream) {
-    // drain
-  }
+/** One model step in a loop; the plugin sees its end once the stream is read through. Resolves the step's result. */
+export async function step(
+  $: Engine,
+  agentId?: string,
+  request: { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number } = {},
+): Promise<TurnStepResult> {
+  const stream = $.turn.step({
+    turnId: 't',
+    index: 0,
+    model: request.model ?? 'claude-test',
+    messageCount: 1,
+    ...(request.effort === undefined ? {} : { effort: request.effort }),
+    ...(agentId === undefined ? {} : { agentId }),
+  })
+  // The kit's `stream.result` is undefined (probe 2026-10-18): the result is the iterator's final value.
+  const it = stream[Symbol.asyncIterator]()
+  let next = await it.next()
+  while (next.done !== true) next = await it.next()
+  return next.value
 }
 
 export async function complete($: Engine, args: { agentId?: string; answer: string; reason?: 'answer' | 'aborted' | 'error' }): Promise<void> {

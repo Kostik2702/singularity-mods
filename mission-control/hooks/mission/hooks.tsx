@@ -1,18 +1,20 @@
 import { atom, read, update } from 'claude-code'
-import type { On, TurnStepResult } from 'claude-code'
+import type { EngineInterface, On, TurnStepResult } from 'claude-code'
 
-import type { Action, CurrentAction } from '../../types'
+import type { Action, AgentRow, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import type { LeadConfig } from '../lead/config'
-import { decideSpawn } from '../lead/guard'
-import type { SpawnDecision } from '../lead/guard'
+import { accountStep, stepPrice } from '../lead/account'
+import { decideSpawn, decideStep } from '../lead/guard'
+import type { SpawnDecision, StepDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
+import { isFable } from '../lead/price'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
 import type { Pixmap } from '../lib/pixmap'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
-import { applySpawn, applyStepEnd, applyStepStart, applyToolEnd, applyToolStart, applyTurnStart } from './model'
+import { MAIN, applySpawn, applyStepEnd, applyStepStart, applyStepUsage, applyToolEnd, applyToolStart, applyTurnStart } from './model'
 import { drawAgentsPane } from './pane'
 
 // Mission control's own observers and its tab. What it shares with the memory
@@ -38,6 +40,64 @@ function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+const FABLE_LEAD = 'лид на Fable — всё без явной модели унаследовало бы Fable'
+
+/** A guard or the accounting threw: the request or spawn went through unchanged; the lead hears of it once. */
+async function noteGuardError($: EngineInterface, err: unknown): Promise<void> {
+  try {
+    await update($, leadA, cur =>
+      cur.flags.includes('guard-error')
+        ? cur
+        : { ...pushNews(cur, `ограждение упало: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
+    )
+  } catch {
+    // nothing more to do: the request goes through
+  }
+}
+
+/** The session's lead runs on Fable (spec 6.4): one toast and one news line per session. */
+async function noteFableLead($: EngineInterface): Promise<void> {
+  if ((await read($, leadA)).flags.includes('fable-lead')) return
+  await update($, leadA, cur =>
+    cur.flags.includes('fable-lead') ? cur : { ...pushNews(cur, FABLE_LEAD), flags: [...cur.flags, 'fable-lead'] },
+  )
+  $.ui.toast(FABLE_LEAD)
+}
+
+/** How the news names a loop: its task, else its name or type, else its id; main is the lead. */
+function labelOf(row: AgentRow | undefined, agentId: string | null): string {
+  if (agentId === null) return 'лид'
+  if (row === undefined) return agentId
+  return [row.description, row.name ?? '', row.type].find(t => t.length > 0) ?? agentId
+}
+
+/**
+ * A request settled (spec 6.2): its OE into the ledger and the loop's row, a model the table does not
+ * know, a model the session forced, an advisor call into the lead's news. `effort` is the one the request ran at.
+ */
+async function settleStep(
+  $: EngineInterface,
+  f: { agentId: string | null; requestModel: string; effort: string | null; res: TurnStepResult | undefined },
+): Promise<void> {
+  const usage = f.res?.usage ?? null
+  const rows = await read($, agentsA)
+  const row = rows.find(r => r.id === (f.agentId ?? MAIN))
+  // The agent's first request is the one whose model says whether the session forced another on it.
+  const isFirst = f.agentId !== null && row !== undefined && row.steps === 1
+  const account = {
+    agentId: f.agentId,
+    runId: row?.workflowRunId ?? null,
+    label: labelOf(row, f.agentId),
+    requestModel: f.requestModel,
+    usage,
+    serverTools: (f.res?.serverToolUses ?? []).map(u => u.name),
+    spawnedModel: isFirst ? (row?.model ?? null) : null,
+  }
+  await update($, leadA, cur => accountStep(cur, account))
+  const { oe } = stepPrice(usage, f.requestModel)
+  await update($, agentsA, cur => applyStepUsage(cur, { agentId: f.agentId, oe, model: usage?.model || null, effort: f.effort }))
+}
+
 export function registerMission(
   on: On,
   theme: Theme,
@@ -55,24 +115,76 @@ export function registerMission(
   }).catch(($, e, next) => next(e))
 
   // One model request: the loop thinks while it streams; its text's last sentence is the reason.
+  // The request guard (spec 6.4, 6.7) decides first: a spent or frozen subagent in enforce gets the
+  // block answer and no request goes out; a workflow agent gets the tier's effort; main goes as it
+  // is. A guard that throws lets the request through unchanged and says so once in the lead's news.
+  // After the response its usage is settled into the ledger and the loop's row.
   on('turn.step', async function* ($, e, next) {
     const agentId = e.agentId ?? null
+    let input = e
+    let decision: StepDecision = { kind: 'send' }
+    try {
+      const row = agentId === null ? undefined : (await read($, agentsA)).find(r => r.id === agentId)
+      const runId = row?.workflowRunId ?? null
+      decision = decideStep(
+        {
+          agentId,
+          runId,
+          isWorkflow: runId !== null,
+          model: e.model,
+          ...(e.effort === undefined ? {} : { effort: e.effort }),
+        },
+        await read($, leadA),
+        lead,
+      )
+      if (decision.kind === 'send' && 'effort' in decision) input = { ...e, effort: decision.effort }
+    } catch (err) {
+      input = e
+      decision = { kind: 'send' }
+      await noteGuardError($, err)
+    }
+    if (decision.kind === 'block') {
+      const answer = decision.answer
+      try {
+        const now = await $.clock.now()
+        await update($, agentsA, rows => applyStepEnd(rows, { agentId, answer, now }))
+      } catch {
+        // the block stands, unobserved
+      }
+      yield { kind: 'text' as const, index: 0, text: answer }
+      yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
+      return { turnId: e.turnId, index: e.index, answer, toolUses: [], stopReason: 'end_turn' as const, usage: null }
+    }
+    if (agentId === null && isFable(e.model)) {
+      try {
+        await noteFableLead($)
+      } catch (err) {
+        await noteGuardError($, err)
+      }
+    }
     try {
       const now = await $.clock.now()
       await update($, agentsA, rows => applyStepStart(rows, { agentId, now }))
     } catch {
       // the step goes on unobserved
     }
-    const res = yield* next(e)
+    const res = yield* next(input)
+    // `res` is undefined when nothing streamed beneath (seen in the test kit): read it defensively.
+    const result = res as TurnStepResult | undefined
     try {
-      // `res` is undefined when nothing streamed beneath (seen in the test kit): read it defensively.
-      const answer = (res as TurnStepResult | undefined)?.answer ?? ''
+      const answer = result?.answer ?? ''
       if (answer.length > 0) {
         const now = await $.clock.now()
         await update($, agentsA, rows => applyStepEnd(rows, { agentId, answer, now }))
       }
     } catch {
       // never let the observer fail the model's stream
+    }
+    try {
+      const effort = input.effort === undefined ? null : String(input.effort)
+      await settleStep($, { agentId, requestModel: e.model, effort, res: result })
+    } catch (err) {
+      await noteGuardError($, err)
     }
     return res
   })
@@ -144,15 +256,7 @@ export function registerMission(
       denied = null
       countsAsFable = false
       decision = null
-      try {
-        await update($, leadA, cur =>
-          cur.flags.includes('guard-error')
-            ? cur
-            : { ...pushNews(cur, `ограждение упало: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
-        )
-      } catch {
-        // nothing more to do: the spawn goes through
-      }
+      await noteGuardError($, err)
     }
     try {
       if (decision?.kind === 'deny') {
@@ -201,9 +305,12 @@ export function registerMission(
     } catch {
       // unobserved
     }
+    // The deny is delivered: a later spawn that shares the id (a workflow run's agents do) must not meet it.
+    decidedDenies.delete(e.tool_use_id)
     return res
   }).catch(($, e, next) => {
     const deny = decidedDenies.get(e.tool_use_id)
+    decidedDenies.delete(e.tool_use_id)
     return next.called || deny === undefined ? next(e) : { deny }
   })
 

@@ -369,6 +369,24 @@ export function applyStepEnd(rows: readonly AgentRow[], at: { agentId: string | 
   return patch(withLoop(rows, at.agentId, at.now), loopId(at.agentId), r => ({ ...r, lastEventAt: at.now, intent: intent ?? r.intent }))
 }
 
+/**
+ * A model request settled: its OE joins the loop's row, which also takes the model that answered and the
+ * effort the request ran at (a null keeps what the row has). A loop with no row changes nothing.
+ */
+export function applyStepUsage(
+  rows: readonly AgentRow[],
+  at: { agentId: string | null; oe: number; model: string | null; effort: string | null },
+): AgentRow[] {
+  const oe = Number.isFinite(at.oe) && at.oe > 0 ? at.oe : 0
+  return patch(rows, loopId(at.agentId), r => ({
+    ...r,
+    // rows from before the ledger carry no oe
+    oe: (r.oe ?? 0) + oe,
+    model: at.model ?? r.model,
+    effort: at.effort ?? r.effort ?? null,
+  }))
+}
+
 /** A tool call begins in a loop: it acts, and the call is its current action. */
 export function applyToolStart(
   rows: readonly AgentRow[],

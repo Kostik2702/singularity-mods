@@ -1,10 +1,11 @@
-// The spawn guard of the team-lead layer (spec 6.3, 6.7). Pure: facts in, one decision out.
+// The spawn and request guards of the team-lead layer (spec 6.3, 6.4, 6.7). Pure: facts in, one decision out.
 // The model a spawn gets when none is named is the engine's business (CLAUDE_CODE_SUBAGENT_MODEL), not decided here.
 
 import type { Lead } from '../../types'
 import type { LeadConfig } from './config'
 import { budgetLeft, isExhausted } from './ledger'
-import { isFable } from './price'
+import { isFable, tierOf } from './price'
+import type { Tier } from './price'
 
 export type SpawnFacts = {
   model?: string
@@ -82,4 +83,44 @@ export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecisio
   if (rewrite !== null) return { kind: 'rewrite', ...rewrite }
   if (f.fork) return { kind: 'note', note: 'форк · модель лида' }
   return countsAsFable ? { kind: 'pass', countsAsFable: true } : { kind: 'pass' }
+}
+export type StepFacts = {
+  /** The loop the request is made in; null = the lead's own (main). */
+  agentId: string | null
+  runId: string | null
+  isWorkflow: boolean
+  /** The model the request names. */
+  model: string
+  /** The effort the request already carries, if any. */
+  effort?: string | number
+}
+
+/** The effort levels the guard itself sets (spec 6.7). */
+export type StepEffort = 'low' | 'medium' | 'high'
+
+export type StepDecision = { kind: 'send' } | { kind: 'send'; effort: StepEffort } | { kind: 'block'; answer: string }
+
+const BLOCK_BUDGET = '[mission-control] остановлен до запроса: бюджет исчерпан'
+const BLOCK_HALT = '[mission-control] остановлен до запроса: заморожено владельцем'
+
+const WORKFLOW_EFFORT: Readonly<Partial<Record<Tier, StepEffort>>> = { haiku: 'low', sonnet: 'medium', opus: 'high' }
+
+/**
+ * The request guard (spec 6.4, 6.7). Main is never blocked and never rewritten: the lead must be able to
+ * ask the owner. A subagent is blocked in enforce when it is frozen or its agent, run or session budget
+ * is gone (the request in flight is never cut; only the next one is refused). A workflow agent whose
+ * request names no effort gets the tier's; Fable and a model the table does not know are left alone.
+ */
+export function decideStep(f: StepFacts, l: Lead, c: LeadConfig): StepDecision {
+  if (f.agentId === null) return { kind: 'send' }
+  if (c.mode === 'enforce') {
+    if (l.halted) return { kind: 'block', answer: BLOCK_HALT }
+    if (isExhausted(budgetLeft(l, c, { agentId: f.agentId, runId: f.runId }))) return { kind: 'block', answer: BLOCK_BUDGET }
+  }
+  if (f.isWorkflow && f.effort === undefined) {
+    const tier = tierOf(f.model)
+    const effort = tier === null ? undefined : WORKFLOW_EFFORT[tier]
+    if (effort !== undefined) return { kind: 'send', effort }
+  }
+  return { kind: 'send' }
 }
