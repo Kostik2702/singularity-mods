@@ -25,7 +25,7 @@ function clip(line: string): string {
 }
 
 /** Identical lines in one, «×N», in the order they first appeared. */
-function merged(news: readonly string[]): string[] {
+export function mergedNews(news: readonly string[]): string[] {
   const counts = new Map<string, number>()
   for (const line of news) counts.set(line, (counts.get(line) ?? 0) + 1)
   return [...counts].map(([line, n]) => (n > 1 ? `${clip(line)} ×${n}` : clip(line)))
@@ -56,7 +56,7 @@ function headOf(l: Lead, c: LeadConfig): string[] {
  */
 export function digestOf(l: Lead, c: LeadConfig): string | null {
   const head = headOf(l, c)
-  const news = merged(l.news)
+  const news = mergedNews(l.news)
   if (head.length === 0 && news.length === 0) return null
   const join = (lines: string[], rest: number): string =>
     (rest > 0 ? [...lines, `…и ещё ${rest}`] : lines).join('\n')

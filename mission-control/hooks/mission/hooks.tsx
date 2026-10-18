@@ -9,6 +9,7 @@ import { decideSpawn, decideStep } from '../lead/guard'
 import type { SpawnDecision, StepDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { isFable } from '../lead/price'
+import { TEAM_TOOL } from '../lead/team'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
 import type { Pixmap } from '../lib/pixmap'
@@ -202,7 +203,7 @@ export function registerMission(
   // Every tool call, in plain words: the feed, and the calling loop's current action.
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
-    if (tool === SNAPSHOT_TOOL) return next(e)
+    if (tool === SNAPSHOT_TOOL || tool === TEAM_TOOL) return next(e)
     const agentId = e.agentId ?? null
     const startedAt = await $.clock.now()
     const id = e.tool_use_id ?? `${tool}-${startedAt}`

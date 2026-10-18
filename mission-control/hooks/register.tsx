@@ -29,6 +29,7 @@ import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { leadConfigOf } from './lead/config'
 import { takeDigest } from './lead/digest'
 import { EMPTY_LEAD, pushNews } from './lead/ledger'
+import { BUDGET_BAD, BUDGET_NO_LIMIT, TEAM_TOOL, budgetIncrement, haltLead, raiseBudget, resumeLead, sessionLimit, soloLead, teamReport, teamTable } from './lead/team'
 import { watchStep } from './lead/watch'
 import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
@@ -623,6 +624,13 @@ export const register: Register = (on, options) => {
         })
       },
       async () => {
+        await $.tool.register({
+          name: 'team',
+          description:
+            'The executors you delegated to, as a table: id, tier, effort, task, turns, OE spent (and the limit), state. Also the session OE budget, the Fable calls used, the news the digest has not delivered yet and the flags (frozen, solo, budget notices). Read-only: it does not clear the news.',
+        })
+      },
+      async () => {
         await $.command.register({
           name: 'mem',
           description: 'Память → контекст: вкладка «Память»; /mem close|hide|show|quiet|reset',
@@ -638,8 +646,8 @@ export const register: Register = (on, options) => {
       async () => {
         await $.command.register({
           name: 'mc',
-          description: 'Mission control: кто из агентов чем занят и почему; /mc close|clear',
-          argumentHint: '[close|clear]',
+          description: 'Mission control: кто из агентов чем занят и почему; /mc close|clear|budget [+N]|halt|resume|solo',
+          argumentHint: '[close|clear|budget [+N]|halt|resume|solo]',
         })
       },
       async () => {
@@ -738,7 +746,31 @@ export const register: Register = (on, options) => {
       await update($, actionsA, list => list.filter(a => a.turn === turn))
       return { text: 'mission-control: завершённые агенты и лента прошлых ходов убраны.' }
     }
-    if (arg.length > 0) return { text: `mission-control: не знаю «${arg}». /mc — открыть вкладку, /mc close, /mc clear.` }
+    const words = arg.split(/\s+/)
+    if (words[0] === 'budget') {
+      if (words.length === 1) return { text: teamTable(await read($, agentsA), await read($, leadA), leadConfig, await $.clock.now()) }
+      const n = budgetIncrement(words.slice(1))
+      if (n === null) return { text: BUDGET_BAD }
+      if (leadConfig.sessionBudget === null) return { text: BUDGET_NO_LIMIT }
+      await update($, leadA, cur => raiseBudget(cur, leadConfig, n))
+      return { text: `mission-control: лимит сессии: ${sessionLimit(await read($, leadA), leadConfig)} OE (+${n})` }
+    }
+    if (words.length === 1 && words[0] === 'halt') {
+      await update($, leadA, haltLead)
+      const note = leadConfig.mode === 'enforce' ? '' : ' В режиме наблюдения заморозка только сообщается лиду.'
+      return { text: `mission-control: исполнители остановлены (/mc resume — снять).${note}` }
+    }
+    if (words.length === 1 && words[0] === 'resume') {
+      await update($, leadA, resumeLead)
+      return { text: 'mission-control: заморозка снята.' }
+    }
+    if (words.length === 1 && words[0] === 'solo') {
+      await update($, leadA, soloLead)
+      return { text: 'mission-control: solo — лид получит «делай сам, не делегируй» в ближайшей сводке.' }
+    }
+    if (arg.length > 0) {
+      return { text: `mission-control: не знаю «${arg}». /mc — открыть вкладку, /mc close, /mc clear, /mc budget [+N], /mc halt, /mc resume, /mc solo.` }
+    }
     const opened = await $.ui.open({ id: AGENTS_PANE, title: theme.titles.agents })
     await update($, agentsPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
     return { text: opened.isPlaced ? 'mission-control: вкладка «Агенты» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
@@ -820,6 +852,11 @@ export const register: Register = (on, options) => {
     }
     return { result: JSON.stringify(state, null, 1) }
   })
+
+  // The team table for the lead: read-only, the news it lists is still delivered by the digest.
+  on('tool.call', { tool: TEAM_TOOL }, async $ => ({
+    result: teamReport(await read($, agentsA), await read($, leadA), leadConfig, await $.clock.now()),
+  }))
 
   // The digest for the lead (spec 6.6): what changed since the last one, after every tool batch of the
   // main loop (a subagent's batch carries agent_id and gets nothing). Fails open: a throw leaves the batch
