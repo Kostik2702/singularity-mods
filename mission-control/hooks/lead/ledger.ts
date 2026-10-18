@@ -10,6 +10,7 @@ export const EMPTY_LEAD: Lead = Object.freeze({
   extra: 0,
   fableCalls: 0,
   councilTurn: null,
+  councilAgents: Object.freeze([]) as unknown as string[],
   halted: false,
   solo: false,
   rewrites: 0,

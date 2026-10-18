@@ -6,6 +6,7 @@ import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath,
 import type { MbInvocation } from '../lib/parse'
 import { BOOT_BLESS_MS, BOOT_MS, BOOT_STEP_MS, bootElapsed } from '../lib/boot'
 import { branchOf, drawHerald, homeShort } from '../lib/herald'
+import { afterOwnerPrompt } from '../lead/council'
 import { COUNCIL_COMMANDS } from '../lead/guard'
 import { leadConfigOf } from '../lead/config'
 import type { LeadConfig } from '../lead/config'
@@ -32,6 +33,7 @@ const SEVEN_DAY_ALERT = 90
 
 // The engine's scan accepts only an atom made in the same file: every file declares
 // the values it reads or writes, with the same key and initial value as the others.
+const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const hooksA = atom({ plugin: 'mission-control', key: 'hooks' } as const, [])
 const callsA = atom({ plugin: 'mission-control', key: 'calls' } as const, [])
 const readsA = atom({ plugin: 'mission-control', key: 'reads' } as const, [])
@@ -250,9 +252,16 @@ export function registerMemory(
         }
       }
     }
+    // The window ends when the owner speaks again (spec 6.7, R25): their own prompt that is not a council command,
+    // with no council member still working. Closed before the prompt enters, so its turn already finds it shut.
+    try {
+      const rows = await read($, agentsA)
+      await update($, leadA, cur => afterOwnerPrompt(cur, rows, { origin: e.origin.kind, command: e.command?.name }))
+    } catch {
+      // the window stays as it was
+    }
     const res = await next(input)
-    // A council command opens the window once its prompt has entered (a refused one opens nothing);
-    // main's turn.complete closes it (register.tsx).
+    // A council command opens the window once its prompt has entered (a refused one opens nothing).
     const command = e.command?.name
     if (res.drop === undefined && command !== undefined && COUNCIL_COMMANDS.includes(command)) {
       await update($, leadA, l => ({ ...l, councilTurn: command }))

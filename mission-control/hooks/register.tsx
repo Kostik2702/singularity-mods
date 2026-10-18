@@ -688,10 +688,8 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const answer = await next(e)
     await fanOut([
-      // The council window is the main turn that opened it: main's end closes it.
-      async () => {
-        if (e.agentId === undefined) await update($, leadA, l => (l.councilTurn === null ? l : { ...l, councilTurn: null }))
-      },
+      // The council window is not closed here: the councils' background rounds end turns and wake new ones.
+      // The owner's next own prompt closes it (memory/hooks.tsx, prompt.submit).
       // The vox chirps when a main turn ends (the slate's sound).
       async () => {
         if (e.agentId === undefined) await chime($, 'vox')

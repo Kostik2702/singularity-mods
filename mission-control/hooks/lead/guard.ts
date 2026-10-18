@@ -41,7 +41,7 @@ const COUNCIL_PATTERNS: readonly RegExp[] = COUNCIL_MARKERS.map(atLineStart)
 // A non-empty text must follow the reason marker on its own line.
 const FABLE_REASON: RegExp = new RegExp(`^[ \\t]*${FABLE_REASON_MARKER}[ \\t]*\\S`, 'm')
 
-const isCouncilPrompt = (prompt: string): boolean => COUNCIL_PATTERNS.some((p) => p.test(prompt))
+export const isCouncilPrompt = (prompt: string): boolean => COUNCIL_PATTERNS.some((p) => p.test(prompt))
 const hasFableReason = (prompt: string): boolean => FABLE_REASON.test(prompt)
 
 /**

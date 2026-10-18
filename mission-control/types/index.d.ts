@@ -245,6 +245,11 @@ export type Lead = {
   fableCalls: number
   /** The council command name while one is open, null when closed. */
   councilTurn: string | null
+  /**
+   * The agents spawned with a council marker while the window was open: the window stays open while one still
+   * works. Absent in a ledger from before the field (a hot reload): counts as none.
+   */
+  councilAgents?: string[]
   halted: boolean
   solo: boolean
   rewrites: number

@@ -48,20 +48,67 @@ test('an advisor with a reason passes until the cap, then the next one is denied
   expect(engine.reached).toHaveLength(3)
 })
 
-test('council: a command opens the window, main’s turn.complete closes it', async ($, on) => {
+const MISSION = 'COUNCIL MISSION: оцени план'
+
+// A prompt of a given origin; the kit's `submit` helper is always the owner's composer.
+async function submitFrom($: Parameters<typeof submit>[0], kind: 'task-notification' | 'bridge' | 'composer', text: string): Promise<void> {
+  await $.prompt.submit({ text, wait: false, origin: { kind } })
+}
+
+test('council: a command opens the window, the owner’s next own prompt closes it once the members are done', async ($, on) => {
   const engine = engineBeneath(on)
-  const prompt = 'COUNCIL MISSION: оцени план'
-  const before = await spawn($, { subagentType: 'critic', description: 'до', prompt })
+  const before = await spawn($, { subagentType: 'critic', description: 'до', prompt: MISSION })
   expect(before.deny).toBe(DENIED_COUNCIL)
 
   await submitCommand($, 'council')
-  const inside = await spawn($, { subagentType: 'critic', description: 'внутри', prompt })
+  const inside = await spawn($, { subagentType: 'critic', description: 'внутри', prompt: MISSION })
   expect(inside.deny).toBeUndefined()
   expect(engine.reached.at(-1)?.model).toBe('opus')
 
-  await complete($, { answer: 'готово' })
-  const after = await spawn($, { subagentType: 'critic', description: 'после', prompt })
+  await complete($, { answer: 'жду членов совета' })
+  await complete($, { agentId: 'a1', answer: 'член совета закончил' })
+  await submit($, 'спасибо, дальше без совета')
+  const after = await spawn($, { subagentType: 'critic', description: 'после', prompt: MISSION })
   expect(after.deny).toBe(DENIED_COUNCIL)
+})
+
+test('council: the window outlives main’s turn.complete, so round 2 after a task-notification passes', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submitCommand($, 'council')
+  expect((await spawn($, { subagentType: 'critic', description: 'раунд 1', prompt: MISSION })).deny).toBeUndefined()
+  // The lead's turn ends while the members work in the background; the member's report then wakes a new turn.
+  await complete($, { answer: 'жду членов совета' })
+  await complete($, { agentId: 'a1', answer: 'член совета закончил' })
+  await submitFrom($, 'task-notification', '<task-notification>a1 done</task-notification>')
+  await complete($, { answer: 'синтез раунда 1' })
+  const second = await spawn($, { subagentType: 'critic', description: 'раунд 2', prompt: MISSION })
+  expect(second.deny).toBeUndefined()
+  expect(engine.reached).toHaveLength(2)
+  expect(engine.reached.at(-1)?.model).toBe('opus')
+})
+
+test('council: an owner prompt while a member still works keeps the window open', async ($, on) => {
+  engineBeneath(on)
+  await submitCommand($, 'council')
+  await spawn($, { subagentType: 'critic', description: 'член', prompt: MISSION })
+  await complete($, { answer: 'жду членов совета' })
+  await submit($, 'как идёт?')
+  await submitFrom($, 'bridge', 'и с телефона тоже спрошу')
+  expect((await spawn($, { subagentType: 'critic', description: 'ещё один', prompt: MISSION })).deny).toBeUndefined()
+})
+
+test('council: a second council command while a member works keeps the window and a new one reopens a closed one', async ($, on) => {
+  engineBeneath(on)
+  await submitCommand($, 'council')
+  await spawn($, { subagentType: 'critic', description: 'член', prompt: MISSION })
+  await submitCommand($, 'planning-council')
+  expect((await spawn($, { subagentType: 'critic', description: 'план', prompt: 'PLANNING MISSION: план' })).deny).toBeUndefined()
+  await complete($, { agentId: 'a1', answer: 'закончил' })
+  await complete($, { agentId: 'a2', answer: 'закончил' })
+  await submit($, 'хватит')
+  expect((await spawn($, { subagentType: 'critic', description: 'после', prompt: MISSION })).deny).toBe(DENIED_COUNCIL)
+  await submitCommand($, 'council')
+  expect((await spawn($, { subagentType: 'critic', description: 'заново', prompt: MISSION })).deny).toBeUndefined()
 })
 
 test('a subagent’s turn.complete does not close the council window', async ($, on) => {

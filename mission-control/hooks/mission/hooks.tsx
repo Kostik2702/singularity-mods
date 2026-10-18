@@ -5,7 +5,8 @@ import type { Action, AgentRow, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import type { LeadConfig } from '../lead/config'
 import { accountStep, stepPrice } from '../lead/account'
-import { decideSpawn, decideStep } from '../lead/guard'
+import { markCouncilAgent } from '../lead/council'
+import { decideSpawn, decideStep, isCouncilPrompt } from '../lead/guard'
 import type { SpawnDecision, StepDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { isFable } from '../lead/price'
@@ -289,6 +290,15 @@ export function registerMission(
         await update($, leadA, cur => ({ ...cur, fableCalls: cur.fableCalls + 1 }))
       } catch {
         // the count is lost, the spawn is not
+      }
+    }
+    // A council member (spec 6.7, R25): remembered by id, so the window stays open while it works.
+    const memberId = res.agentId
+    if (res.deny === undefined && memberId !== undefined && isCouncilPrompt(e.prompt)) {
+      try {
+        await update($, leadA, cur => markCouncilAgent(cur, memberId))
+      } catch {
+        // the window then closes at the owner's next prompt even if this member still works
       }
     }
     // The row of the spawn (a refused one too). A failure here must not undo the spawn or the deny.

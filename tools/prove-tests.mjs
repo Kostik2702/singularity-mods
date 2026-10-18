@@ -43,6 +43,11 @@ const MUTANTS = [
   { name: 'lead-halt-spawn-only-in-enforce', file: 'hooks/lead/guard.ts', from: "if (l.halted) return { kind: 'deny', reason: DENY_HALT }", to: "if (l.halted && c.mode === 'enforce') return { kind: 'deny', reason: DENY_HALT }" },
   { name: 'lead-halt-step-only-in-enforce', file: 'hooks/lead/guard.ts', from: "if (l.halted) return { kind: 'block', answer: BLOCK_HALT }", to: "if (l.halted && c.mode === 'enforce') return { kind: 'block', answer: BLOCK_HALT }" },
   { name: 'lead-bare-advisor-not-fable', file: 'hooks/lead/guard.ts', from: "isFable(f.model) || (f.subagentType === 'advisor' && (f.model === undefined || f.model === ''))", to: 'isFable(f.model)' },
+  // The council window (R25): it lives until the owner speaks, and a working member holds it open.
+  { name: 'lead-council-closes-on-main-turn-complete', file: 'hooks/register.tsx', from: "if (e.agentId === undefined) await chime($, 'vox')", to: "if (e.agentId === undefined) { await update($, leadA, l => ({ ...l, councilTurn: null })); await chime($, 'vox') }" },
+  { name: 'lead-council-closes-with-member-working', file: 'hooks/lead/council.ts', from: 'return working ? l : { ...l, councilTurn: null, councilAgents: [] }', to: 'return { ...l, councilTurn: null, councilAgents: [] }' },
+  { name: 'lead-council-closed-by-any-origin', file: 'hooks/lead/council.ts', from: '!OWNER_ORIGINS.includes(p.origin)', to: 'false' },
+  { name: 'lead-council-member-not-remembered', file: 'hooks/mission/hooks.tsx', from: 'memberId !== undefined && isCouncilPrompt(e.prompt)', to: 'memberId === "never" && isCouncilPrompt(e.prompt)' },
 ]
 
 /** Runs the suite on a folder: its exit status and the pass/fail counts it printed, null when none were printed. */

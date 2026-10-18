@@ -103,6 +103,7 @@ describe('lead ledger', () => {
       extra: 0,
       fableCalls: 0,
       councilTurn: null,
+      councilAgents: [],
       halted: false,
       solo: false,
       rewrites: 0,
