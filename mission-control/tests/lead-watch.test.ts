@@ -176,7 +176,8 @@ describe('watchStep', () => {
 })
 
 describe('the watchdog in the engine', () => {
-  test('an idle lead is woken once per 10 minutes: two alarms 2 minutes apart make one prompt', async ($, on) => {
+  // 13 virtual minutes of one-second ticks take 3-6 s of real time: past the kit's 5 s default on a busy machine.
+  test('an idle lead is woken once per 10 minutes: two alarms 2 minutes apart make one prompt', { timeoutMs: 30_000 }, async ($, on) => {
     const engine = engineBeneath(on, { spawns: ['a1', 'a2'] })
     await $.session.start(SESSION)
     await submit($, 'go')
@@ -193,7 +194,7 @@ describe('the watchdog in the engine', () => {
     expect(engine.submitted).toHaveLength(1)
   })
 
-  test('a busy lead is not woken', async ($, on) => {
+  test('a busy lead is not woken', { timeoutMs: 30_000 }, async ($, on) => {
     const engine = engineBeneath(on, { spawns: ['a1'] })
     await $.session.start(SESSION)
     await submit($, 'go')

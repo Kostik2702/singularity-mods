@@ -340,6 +340,7 @@ export function applySpawn(rows: readonly AgentRow[], f: SpawnFacts): AgentRow[]
         ...r,
         phase: isResumed ? 'starting' : r.phase,
         phaseAt: isResumed ? f.now : r.phaseAt,
+        ...(isResumed ? { runStartedAt: f.now } : {}),
         endedAt: null,
         lastEventAt: f.now,
         turn: r.turn === -1 ? f.turn : r.turn,
@@ -364,6 +365,8 @@ export function applyStepStart(rows: readonly AgentRow[], at: { agentId: string 
     phaseAt: at.now,
     lastEventAt: at.now,
     steps: r.steps + 1,
+    // A request in an ended loop is a resume: a new run begins.
+    ...(r.endedAt !== null ? { runStartedAt: at.now } : {}),
     endedAt: null,
   }))
 }

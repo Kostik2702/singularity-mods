@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { AgentRow } from '../types'
-import { JOURNAL_FILE, JOURNAL_PREV, ROTATE_BYTES, journalLine } from '../hooks/lead/journal'
-import { complete, engineBeneath, fakeFs, spawn, step, submit } from './helpers'
+import { JOURNAL_FILE, JOURNAL_PREV, ROTATE_BYTES, appendJournal, journalLine } from '../hooks/lead/journal'
+import { complete, engineBeneath, fakeFs, snapshot, spawn, step, submit } from './helpers'
 
 const SONNET = 'claude-sonnet-5-5'
 const DIR = '/data/mc'
@@ -99,6 +99,53 @@ test('lines accumulate, and two ends at once lose neither', async ($, on) => {
   await spawn($, { subagentType: 'scout', description: 'два' })
   await Promise.all([endOne($, 'a1'), endOne($, 'a2')])
   expect((fs.text(FILE) ?? '').split('\n').filter(l => l.length > 0)).toHaveLength(2)
+})
+
+test('appends that overlap in time lose no line (the queue)', async () => {
+  // A hand-made file system whose read yields, so a second append starts before the first has written.
+  const files = new Map<string, string>([[FILE, '{"seed":1}\n']])
+  const stub = {
+    env: { get: async (name: string) => (name === 'CLAUDE_PLUGIN_DATA' ? DIR : undefined) },
+    fs: {
+      exists: async (path: string) => files.has(path),
+      read: async (path: string) => {
+        const text = files.get(path) ?? ''
+        for (let i = 0; i < 5; i += 1) await Promise.resolve()
+        return text
+      },
+      write: async (path: string, text: string) => {
+        files.set(path, text)
+      },
+    },
+  }
+  await Promise.all([1, 2, 3].map(n => appendJournal(stub as never, `{"n":${n}}`)))
+  expect((files.get(FILE) ?? '').split('\n').filter(l => l.length > 0)).toHaveLength(4)
+})
+
+test('a resumed executor is journaled once per run: the second line holds only the second run', async ($, on) => {
+  const fs = fakeFs(on)
+  const engine = engineBeneath(on, { env: { CLAUDE_PLUGIN_DATA: DIR }, spawnModel: SONNET, spawns: ['a1', 'a1'] })
+  const used = { model: SONNET, input_tokens: 1000, output_tokens: 400, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+  await submit($, 'прогон')
+  await spawn($, { subagentType: 'scout', description: 'найти' })
+  engine.stepAnswer({ usage: used })
+  await step($, 'a1')
+  await engine.clock.advance(1000)
+  await complete($, { agentId: 'a1', answer: 'готово.' })
+  await engine.clock.advance(60_000)
+  await spawn($, { subagentType: 'scout', description: 'найти ещё' })
+  engine.stepAnswer({ usage: used })
+  await step($, 'a1')
+  engine.stepAnswer({ usage: used })
+  await step($, 'a1')
+  await engine.clock.advance(3000)
+  await complete($, { agentId: 'a1', answer: 'готово снова.' })
+  const lines = (fs.text(FILE) ?? '').split('\n').filter(l => l.length > 0).map(l => JSON.parse(l) as Record<string, number>)
+  expect(lines).toHaveLength(2)
+  expect(lines[0]).toMatchObject({ turns: 1, ms: 1000, oe: 1500 })
+  expect(lines[1]).toMatchObject({ turns: 2, ms: 3000, oe: 3000 })
+  const total = (await snapshot($)).agents.find(r => r.id === 'a1')?.oe
+  expect((lines[0]?.oe ?? 0) + (lines[1]?.oe ?? 0)).toBe(total)
 })
 
 test('a write failure is swallowed: the end still lands on the row', async ($, on) => {

@@ -162,6 +162,11 @@ export type AgentRow = {
    * rows written by an older module before a reload: counts as confirmed.
    */
   isConfirmed?: boolean
+  /** When the run in progress began: the spawn, or the resume of an ended agent. Absent: `startedAt`. */
+  runStartedAt?: number
+  /** The OE and steps already written to the week journal, so a resumed agent's next line holds only its new run. */
+  journaledOe?: number
+  journaledSteps?: number
 }
 
 /** What a long action is, by its command: the Processes tab's label and its gist. */

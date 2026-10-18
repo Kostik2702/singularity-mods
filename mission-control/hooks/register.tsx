@@ -735,6 +735,8 @@ export const register: Register = (on, options) => {
         const ended = (await read($, agentsA)).find(r => r.id === e.agentId)
         if (ended !== undefined && (ended.phase === 'done' || ended.phase === 'failed' || ended.phase === 'aborted')) {
           await appendJournal($, journalLine(ended))
+          // What is written is not written again: a resume's next line starts from here.
+          await update($, agentsA, rows => rows.map(r => (r.id === ended.id ? { ...r, journaledOe: ended.oe, journaledSteps: ended.steps } : r)))
         }
       },
     ])

@@ -20,7 +20,8 @@ const PLUGIN_DIR = 'plugins/data/mission-control'
 /**
  * The journal line of a finished executor: exactly `ts, type, tier, effort, turns, oe, ms, outcome`.
  * `type` is the subagentType, `tier` the model family (`?` when the table does not know the model), `turns` the
- * model steps it made, `oe` its own Opus-equivalent spend, `ms` its run time, `outcome` its final phase.
+ * model steps it made, `oe` its own Opus-equivalent spend, `ms` its run time, `outcome` its final phase. All
+ * three numbers cover the run that just ended (since the spawn or the last resume), not the row's lifetime.
  */
 export function journalLine(row: AgentRow): string {
   const ts = row.endedAt ?? row.lastEventAt
@@ -29,9 +30,10 @@ export function journalLine(row: AgentRow): string {
     type: row.type,
     tier: tierOf(row.model) ?? '?',
     effort: row.effort,
-    turns: row.steps,
-    oe: row.oe,
-    ms: Math.max(0, ts - row.startedAt),
+    // A resumed executor ends again: the line holds only the run that just ended, so lines sum to the row's total.
+    turns: row.steps - (row.journaledSteps ?? 0),
+    oe: row.oe - (row.journaledOe ?? 0),
+    ms: Math.max(0, ts - (row.runStartedAt ?? row.startedAt)),
     outcome: row.phase,
   })
 }
