@@ -14,7 +14,7 @@ const MUTANTS = [
   { name: 'refusal-forgotten', file: 'hooks/mission/model.ts', from: 'if (f.deny !== null) {', to: 'if (f.deny === "never") {' },
   { name: 'tool-call-loses-its-loop', file: 'hooks/mission/hooks.tsx', from: 'applyToolStart(rows, { agentId, action: current, now: startedAt })', to: 'applyToolStart(rows, { agentId: null, action: current, now: startedAt })' },
   { name: 'step-text-ignored', file: 'hooks/mission/hooks.tsx', from: 'if (answer.length > 0) {', to: 'if (answer.length < 0) {' },
-  { name: 'no-view-marker', file: 'hooks/mission/pane.tsx', from: 'const viewed = !isMain && d.viewAgentId === row.id', to: 'const viewed = false' },
+  { name: 'no-view-marker', file: 'hooks/mission/pane.tsx', from: 'const viewed = !isMain && d.viewAgentId === row.id\n    const tail', to: 'const viewed = false\n    const tail' },
   { name: 'reconcile-never-on-timer', file: 'hooks/register.tsx', from: 'if (!always && !needsReconcile(await read($, agentsA), await $.clock.now())) return', to: 'if (!always) return' },
   { name: 'memory-log-back', file: 'hooks/memory/pane.tsx', from: '{heroBlock}', to: '{heroBlock}<Text>поискал в памяти</Text>' },
   { name: 'early-step-dropped', file: 'hooks/mission/model.ts', from: 'return trimAgents([...rows, provisionalRow(agentId, now)])', to: 'return [...rows]' },
@@ -34,6 +34,15 @@ const MUTANTS = [
   { name: 'job-tab-never-raised', file: 'hooks/register.tsx', from: 'if (first !== undefined) {', to: 'if (first !== undefined && first.id === "never") {' },
   { name: 'job-notification-ignored', file: 'hooks/jobs/model.ts', from: "if (word === 'completed')", to: "if (word === 'never')" },
   { name: 'job-intent-lost', file: 'hooks/jobs/hooks.tsx', from: 'const intent = agents.find(r => r.id === (f.agentId ?? MAIN))?.intent ?? null', to: 'const intent = null' },
+  // The team-lead layer (hooks/lead): every guard is proved by switching it off.
+  { name: 'lead-council-branch-dropped', file: 'hooks/lead/guard.ts', from: 'if (isCouncilPrompt(f.prompt)) {', to: 'if (isCouncilPrompt(f.prompt) && f.prompt === "never") {' },
+  { name: 'lead-fable-cap-dropped', file: 'hooks/lead/guard.ts', from: '} else if (l.fableCalls >= c.fableCap) {', to: '} else if (l.fableCalls >= 99999) {' },
+  { name: 'lead-main-blockable', file: 'hooks/lead/guard.ts', from: "if (f.agentId === null) return { kind: 'send' }", to: "if (f.agentId === 'never') return { kind: 'send' }" },
+  { name: 'lead-long-call-alarm-dropped', file: 'hooks/lead/watch.ts', from: 'now - r.current.startedAt > LONG_CALL_MS', to: 'now - r.current.startedAt < 0' },
+  { name: 'lead-digest-cap-dropped', file: 'hooks/lead/digest.ts', from: 'if (text.length <= DIGEST_MAX) return text', to: 'if (text.length <= 99999) return text' },
+  { name: 'lead-halt-spawn-only-in-enforce', file: 'hooks/lead/guard.ts', from: "if (l.halted) return { kind: 'deny', reason: DENY_HALT }", to: "if (l.halted && c.mode === 'enforce') return { kind: 'deny', reason: DENY_HALT }" },
+  { name: 'lead-halt-step-only-in-enforce', file: 'hooks/lead/guard.ts', from: "if (l.halted) return { kind: 'block', answer: BLOCK_HALT }", to: "if (l.halted && c.mode === 'enforce') return { kind: 'block', answer: BLOCK_HALT }" },
+  { name: 'lead-bare-advisor-not-fable', file: 'hooks/lead/guard.ts', from: "isFable(f.model) || (f.subagentType === 'advisor' && (f.model === undefined || f.model === ''))", to: 'isFable(f.model)' },
 ]
 
 /** Runs the suite on a folder: its exit status and the pass/fail counts it printed, null when none were printed. */

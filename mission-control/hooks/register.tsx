@@ -28,6 +28,7 @@ import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { leadConfigOf } from './lead/config'
 import { takeDigest } from './lead/digest'
+import { appendJournal, journalLine } from './lead/journal'
 import { EMPTY_LEAD, pushNews } from './lead/ledger'
 import { BUDGET_BAD, BUDGET_NO_LIMIT, TEAM_TOOL, budgetIncrement, haltLead, raiseBudget, resumeLead, sessionLimit, soloLead, teamReport, teamTable } from './lead/team'
 import { watchStep } from './lead/watch'
@@ -729,6 +730,12 @@ export const register: Register = (on, options) => {
         // again per step (seen live: 77k summed against the engine's own 27k for one agent).
         const tokens = u === undefined ? 0 : (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
         await update($, agentsA, rows => applyComplete(rows, { agentId: e.agentId ?? null, reason: e.reason, answer: e.answer, tokens, now }))
+        // The week journal (spec 6.2): an executor's end is one line; main and an idle teammate are not executors' ends.
+        if (e.agentId === undefined) return
+        const ended = (await read($, agentsA)).find(r => r.id === e.agentId)
+        if (ended !== undefined && (ended.phase === 'done' || ended.phase === 'failed' || ended.phase === 'aborted')) {
+          await appendJournal($, journalLine(ended))
+        }
       },
     ])
     return answer

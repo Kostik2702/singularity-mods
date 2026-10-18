@@ -37,8 +37,10 @@ export const TASKS_DIR = `/tmp/claude-501/-proj/${SESSION_ID}/tasks`
  * over `files` (path → text), folders implied by the paths. `$.session.id` answers
  * SESSION_ID, so the tasks folder is found under /tmp as a live session lays it out.
  */
-export function fakeFs(on: On) {
+export function fakeFs(on: On, opts: { failWrite?: boolean } = {}) {
   const files = new Map<string, string>()
+  // On Windows the kit resolves a plugin's '/data/x' to 'E:\data\x'; keys are kept in the POSIX spelling the tests write.
+  const norm = (path: string): string => path.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   const dirsOf = (): Set<string> => {
     const dirs = new Set<string>()
     for (const path of files.keys()) {
@@ -49,25 +51,26 @@ export function fakeFs(on: On) {
   }
   const missing = (path: string) => Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
   on('session.id', () => ({ value: SESSION_ID }))
-  on('fs.exists', (_$, e) => ({ value: files.has(e.path) || dirsOf().has(e.path) }))
+  on('fs.exists', (_$, e) => ({ value: files.has(norm(e.path)) || dirsOf().has(norm(e.path)) }))
   on('fs.read', (_$, e) => {
-    const text = files.get(e.path)
+    const text = files.get(norm(e.path))
     if (text === undefined) throw missing(e.path)
     return { value: text }
   })
   on('fs.stat', (_$, e) => {
-    const text = files.get(e.path)
+    const text = files.get(norm(e.path))
     if (text !== undefined) return { value: { kind: 'file' as const, size: text.length, mtimeMs: 0, isLink: false } }
-    if (dirsOf().has(e.path)) return { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
+    if (dirsOf().has(norm(e.path))) return { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } }
     throw missing(e.path)
   })
   on('fs.list', (_$, e) => {
+    const dir = norm(e.path)
     const dirs = dirsOf()
-    if (!dirs.has(e.path)) throw missing(e.path)
-    const prefix = e.path === '/' ? '/' : `${e.path}/`
+    if (!dirs.has(dir)) throw missing(e.path)
+    const prefix = dir === '/' ? '/' : `${dir}/`
     const names = new Map<string, 'file' | 'dir'>()
     for (const path of [...files.keys(), ...dirs]) {
-      if (!path.startsWith(prefix) || path === e.path) continue
+      if (!path.startsWith(prefix) || path === dir) continue
       const rest = path.slice(prefix.length)
       const name = rest.split('/')[0] ?? ''
       if (name.length === 0) continue
@@ -75,10 +78,18 @@ export function fakeFs(on: On) {
     }
     return { value: [...names].map(([name, kind]) => ({ name, kind, size: files.get(`${prefix}${name}`)?.length ?? 0, mtimeMs: 0, isLink: false })) }
   })
+  // The plugin's own $.fs.write lands in the same map (the journal test reads it back).
+  on('fs.write', (_$, e) => {
+    if (opts.failWrite === true) throw Object.assign(new Error(`EACCES: ${e.path}`), { code: 'EACCES' })
+    files.set(norm(e.path), e.text)
+    return { value: undefined }
+  })
   return {
     write: (path: string, text: string): void => {
       files.set(path, text)
     },
+    /** The file's text, or undefined when there is none. */
+    text: (path: string): string | undefined => files.get(path),
     append: (path: string, text: string): void => {
       files.set(path, (files.get(path) ?? '') + text)
     },

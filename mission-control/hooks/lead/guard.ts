@@ -45,7 +45,7 @@ const isCouncilPrompt = (prompt: string): boolean => COUNCIL_PATTERNS.some((p) =
 const hasFableReason = (prompt: string): boolean => FABLE_REASON.test(prompt)
 
 /**
- * Order: council, Fable, budget, fork. A deny of any step wins over a rewrite of an earlier one.
+ * Order: halt, council, Fable, budget, fork. A deny of any step wins over a rewrite of an earlier one.
  * A fork or a resume is never rewritten: the engine ignores a fork's model and a resume keeps its own.
  * The council check also runs on workflow spawns (a superset of spec 6.7, which leaves them to the rubric).
  * An advisor with no model is Fable: its own definition names the model, so the guard treats it as asked for.
@@ -111,8 +111,9 @@ const WORKFLOW_EFFORT: Readonly<Partial<Record<Tier, StepEffort>>> = { haiku: 'l
 
 /**
  * The request guard (spec 6.4, 6.7). Main is never blocked and never rewritten: the lead must be able to
- * ask the owner. A subagent is blocked in enforce when it is frozen or its agent, run or session budget
- * is gone (the request in flight is never cut; only the next one is refused). A workflow agent's effort
+ * ask the owner. A frozen subagent (the owner's halt) is blocked in any mode; in enforce a subagent is also
+ * blocked when its agent, run or session budget is gone (the request in flight is never cut; only the next
+ * one is refused). A workflow agent's effort
  * is capped at its tier's (low < medium < high < xhigh < max; haiku low, sonnet medium, opus high): an
  * absent or higher effort becomes the tier's, a lower one stays. A number, a level not in that order,
  * Fable and a model the table does not know are left alone (R17: the engine fills in the session's effort).
