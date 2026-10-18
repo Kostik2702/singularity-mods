@@ -27,6 +27,7 @@ import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { leadConfigOf } from './lead/config'
+import { takeDigest } from './lead/digest'
 import { EMPTY_LEAD, pushNews } from './lead/ledger'
 import { watchStep } from './lead/watch'
 import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
@@ -820,8 +821,38 @@ export const register: Register = (on, options) => {
     return { result: JSON.stringify(state, null, 1) }
   })
 
-  registerMission(on, theme, leadConfigOf(options), crestFile, portraitsDir)
-  registerMemory(on, theme, sealFile, crestFile)
+  // The digest for the lead (spec 6.6): what changed since the last one, after every tool batch of the
+  // main loop (a subagent's batch carries agent_id and gets nothing). Fails open: a throw leaves the batch
+  // untouched and says so once in the lead's news.
+  const leadConfig = leadConfigOf(options)
+  on('classic.PostToolBatch', async ($, e, next) => {
+    const res = await next(e)
+    if (e.agent_id !== undefined) return res
+    try {
+      const out: { text: string | null } = { text: null }
+      await update($, leadA, cur => {
+        const taken = takeDigest(cur, leadConfig)
+        out.text = taken.text
+        return taken.lead
+      })
+      if (out.text === null) return res
+      return { ...res, additionalContext: [...(res.additionalContext ?? []), out.text] }
+    } catch (err) {
+      try {
+        await update($, leadA, cur =>
+          cur.flags.includes('guard-error')
+            ? cur
+            : { ...pushNews(cur, `сводка упала: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
+        )
+      } catch {
+        // nothing more to do: the next batch tries again
+      }
+      return res
+    }
+  }).catch(($, e, next) => next(e))
+
+  registerMission(on, theme, leadConfig, crestFile, portraitsDir)
+  registerMemory(on, theme, sealFile, crestFile, leadConfig)
   registerJobs(on, theme, skullDir)
   registerChrome(on, theme)
 }

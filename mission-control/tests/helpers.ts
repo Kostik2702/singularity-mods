@@ -138,10 +138,15 @@ export function engineBeneath(
   let listed: AgentInfo[] = []
   /** The texts a plugin (not the person) submitted, as they reached the engine. */
   const submitted: string[] = []
+  /** The `context` each prompt reached the engine with, in order (empty when the prompt carried none). */
+  const contexts: string[][] = []
   on('prompt.submit', (_$, e) => {
+    contexts.push([...(e.context ?? [])])
     if (e.origin.kind === 'plugin') submitted.push(e.text)
     return opts.refuseSubmit === true ? { drop: 'blocked' } : { text: e.text }
   })
+  // No settings hook runs beneath: the bottom of the classic batch chain adds nothing of its own.
+  on('classic.PostToolBatch', () => ({}))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer, usage: e.usage }))
   /** What reached the engine beneath the plugin: the spawn inputs after every hook above it. */
@@ -214,6 +219,7 @@ export function engineBeneath(
     clock,
     reached,
     submitted,
+    contexts,
     stepsReached,
     /** The texts $.ui.toast was called with. */
     toasts,

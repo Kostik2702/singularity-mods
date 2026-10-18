@@ -7,7 +7,10 @@ import type { MbInvocation } from '../lib/parse'
 import { BOOT_BLESS_MS, BOOT_MS, BOOT_STEP_MS, bootElapsed } from '../lib/boot'
 import { branchOf, drawHerald, homeShort } from '../lib/herald'
 import { COUNCIL_COMMANDS } from '../lead/guard'
-import { EMPTY_LEAD } from '../lead/ledger'
+import { leadConfigOf } from '../lead/config'
+import type { LeadConfig } from '../lead/config'
+import { takeDigest } from '../lead/digest'
+import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { drawsPictures, loadPixmap } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
@@ -212,11 +215,41 @@ async function memoryData($: $) {
   return { hooks, calls, reads, claudeMd, turns, usage, alerts, searches, hits, best, codeQueries, shown, turn, lastTurnEndAt, now }
 }
 
-export function registerMemory(on: On, theme: Theme, sealFile: string | null = null, crestFile: string | null = null): void {
+export function registerMemory(
+  on: On,
+  theme: Theme,
+  sealFile: string | null = null,
+  crestFile: string | null = null,
+  leadConfig: LeadConfig = leadConfigOf({}),
+): void {
   const pal = theme.colors
   on('prompt.submit', async ($, e, next) => {
     await update($, turnA, n => n + 1)
-    const res = await next(e)
+    // The person's own prompt carries what changed for the lead since the last digest (spec 6.6); a plugin's
+    // wake prompt does not take it. A throw leaves the prompt as it was.
+    let input = e
+    if (e.origin.kind === 'composer' || e.origin.kind === 'bridge') {
+      try {
+        const out: { text: string | null } = { text: null }
+        await update($, leadA, cur => {
+          const taken = takeDigest(cur, leadConfig)
+          out.text = taken.text
+          return taken.lead
+        })
+        if (out.text !== null) input = { ...e, context: [...(e.context ?? []), out.text] }
+      } catch (err) {
+        try {
+          await update($, leadA, cur =>
+            cur.flags.includes('guard-error')
+              ? cur
+              : { ...pushNews(cur, `сводка упала: ${err instanceof Error ? err.message : String(err)}`), flags: [...cur.flags, 'guard-error'] },
+          )
+        } catch {
+          // nothing more to do
+        }
+      }
+    }
+    const res = await next(input)
     // A council command opens the window once its prompt has entered (a refused one opens nothing);
     // main's turn.complete closes it (register.tsx).
     const command = e.command?.name
