@@ -119,7 +119,10 @@ export function engineBeneath(
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer, usage: e.usage }))
-  on('agent.spawn', () => {
+  /** What reached the engine beneath the plugin: the spawn inputs after every hook above it. */
+  const reached: { model?: string; prompt: string; subagentType: string; fork: boolean }[] = []
+  on('agent.spawn', (_$, e) => {
+    reached.push({ ...(e.model === undefined ? {} : { model: e.model }), prompt: e.prompt, subagentType: e.subagentType, fork: e.fork })
     const next = spawns.shift() ?? 'a-extra'
     return typeof next === 'string' ? { model: 'claude-test', agentId: next } : { deny: next.deny }
   })
@@ -166,6 +169,7 @@ export function engineBeneath(
   }) as never)
   return {
     clock,
+    reached,
     /** Pane ids in the order $.ui.open was called. */
     opened,
     /** The title each pane was last opened under. */
@@ -201,7 +205,17 @@ let seq = 0
 
 export async function spawn(
   $: Engine,
-  args: { subagentType: string; description: string; prompt?: string; parentAgentId?: string; name?: string },
+  args: {
+    subagentType: string
+    description: string
+    prompt?: string
+    parentAgentId?: string
+    name?: string
+    model?: string
+    fork?: boolean
+    /** Makes the spawn a workflow `agent()` call of this run. */
+    workflow?: string
+  },
 ) {
   seq += 1
   return $.agent.spawn({
@@ -212,7 +226,9 @@ export async function spawn(
     provider: { plugin: 'engine', tier: 'core' },
     parentModel: 'claude-test',
     background: false,
-    fork: false,
+    fork: args.fork ?? false,
+    ...(args.model === undefined ? {} : { model: args.model }),
+    ...(args.workflow === undefined ? {} : { workflow: { runId: args.workflow, agentIndex: 1 } }),
     ...(args.parentAgentId === undefined ? {} : { parentAgentId: args.parentAgentId }),
     ...(args.name === undefined ? {} : { name: args.name }),
   })

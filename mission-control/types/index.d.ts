@@ -144,6 +144,10 @@ export type AgentRow = {
   report: string | null
   /** New tokens its turns reported: input, output and cache written; cache reads left out. */
   tokens: number
+  /** The effort the agent runs at, once known; null until then. */
+  effort: string | null
+  /** Opus-equivalent tokens (OE) it has spent. */
+  oe: number
   /** The parent's Agent call id. */
   toolUseId: string | null
   /**

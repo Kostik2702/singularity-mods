@@ -157,6 +157,8 @@ export function mainRow(now: number): AgentRow {
     current: null,
     report: null,
     tokens: 0,
+    effort: null,
+    oe: 0,
     toolUseId: null,
     isConfirmed: true,
   }
@@ -285,6 +287,8 @@ function newAgent(f: SpawnFacts, id: string): AgentRow {
     current: null,
     report: null,
     tokens: 0,
+    effort: null,
+    oe: 0,
     toolUseId: f.toolUseId,
     isConfirmed: true,
   }
@@ -319,6 +323,8 @@ export function applySpawn(rows: readonly AgentRow[], f: SpawnFacts): AgentRow[]
       current: r.current,
       report: r.report,
       tokens: r.tokens,
+      effort: r.effort ?? null,
+      oe: r.oe ?? 0,
     }))
   }
   if (known !== undefined) {

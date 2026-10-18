@@ -6,6 +6,8 @@ import { estimateTokens, findMbInvocations, fmtTokens, hashText, matchesHitPath,
 import type { MbInvocation } from '../lib/parse'
 import { BOOT_BLESS_MS, BOOT_MS, BOOT_STEP_MS, bootElapsed } from '../lib/boot'
 import { branchOf, drawHerald, homeShort } from '../lib/herald'
+import { COUNCIL_COMMANDS } from '../lead/guard'
+import { EMPTY_LEAD } from '../lead/ledger'
 import { drawsPictures, loadPixmap } from '../lib/terminal'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
@@ -38,6 +40,7 @@ const alertsA = atom({ plugin: 'mission-control', key: 'alerts' } as const, null
 const hiddenA = atom({ plugin: 'mission-control', key: 'isHidden' } as const, false)
 const quietA = atom({ plugin: 'mission-control', key: 'isQuiet' } as const, false)
 const lastEndA = atom({ plugin: 'mission-control', key: 'lastTurnEndAt' } as const, null)
+const leadA = atom({ plugin: 'mission-control', key: 'lead' } as const, EMPTY_LEAD)
 
 type $ = EngineInterface
 
@@ -213,6 +216,9 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
   const pal = theme.colors
   on('prompt.submit', async ($, e, next) => {
     await update($, turnA, n => n + 1)
+    // A council command opens the council window; main's turn.complete closes it (register.tsx).
+    const command = e.command?.name
+    if (command !== undefined && COUNCIL_COMMANDS.includes(command)) await update($, leadA, l => ({ ...l, councilTurn: command }))
     return next(e)
   }).catch(($, e, next) => next(e))
 

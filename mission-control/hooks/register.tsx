@@ -26,6 +26,8 @@ import { countDoctor } from './lib/parse'
 import { themeOf } from './lib/theme'
 import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
+import { leadConfigOf } from './lead/config'
+import { EMPTY_LEAD } from './lead/ledger'
 import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
 import { registerChrome } from './chrome/hooks'
@@ -77,6 +79,7 @@ const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
 const jobsDirA = atom({ plugin: 'mission-control', key: 'jobsDir' } as const, null)
 const jobsPaneStatusA = atom({ plugin: 'mission-control', key: 'jobsPaneStatus' } as const, null)
+const leadA = atom({ plugin: 'mission-control', key: 'lead' } as const, EMPTY_LEAD)
 
 type $ = EngineInterface
 
@@ -643,6 +646,10 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const answer = await next(e)
     await fanOut([
+      // The council window is the main turn that opened it: main's end closes it.
+      async () => {
+        if (e.agentId === undefined) await update($, leadA, l => (l.councilTurn === null ? l : { ...l, councilTurn: null }))
+      },
       // The vox chirps when a main turn ends (the slate's sound).
       async () => {
         if (e.agentId === undefined) await chime($, 'vox')
@@ -781,7 +788,7 @@ export const register: Register = (on, options) => {
     return { result: JSON.stringify(state, null, 1) }
   })
 
-  registerMission(on, theme, crestFile, portraitsDir)
+  registerMission(on, theme, leadConfigOf(options), crestFile, portraitsDir)
   registerMemory(on, theme, sealFile, crestFile)
   registerJobs(on, theme, skullDir)
   registerChrome(on, theme)

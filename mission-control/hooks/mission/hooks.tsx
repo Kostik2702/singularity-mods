@@ -3,6 +3,9 @@ import type { On, TurnStepResult } from 'claude-code'
 
 import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
+import type { LeadConfig } from '../lead/config'
+import { decideSpawn } from '../lead/guard'
+import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
 import type { Pixmap } from '../lib/pixmap'
@@ -28,12 +31,19 @@ const actionsA = atom({ plugin: 'mission-control', key: 'actions' } as const, []
 const turnA = atom({ plugin: 'mission-control', key: 'turn' } as const, 0)
 const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
 const usageA = atom({ plugin: 'mission-control', key: 'usage' } as const, null)
+const leadA = atom({ plugin: 'mission-control', key: 'lead' } as const, EMPTY_LEAD)
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function registerMission(on: On, theme: Theme, crestFile: string | null = null, portraitsDir: string | null = null): void {
+export function registerMission(
+  on: On,
+  theme: Theme,
+  lead: LeadConfig,
+  crestFile: string | null = null,
+  portraitsDir: string | null = null,
+): void {
   const c = theme.colors
   on('turn.start', async ($, e, next) => {
     const res = await next(e)
@@ -95,8 +105,56 @@ export function registerMission(on: On, theme: Theme, crestFile: string | null =
     return ran
   }).catch(($, e, next) => next(e))
 
+  // The spawn guard (spec 6.3): deny before `next`, or rewrite the model on the way in. A guard that
+  // throws lets the spawn through unchanged and says so once in the lead's news.
   on('agent.spawn', async ($, e, next) => {
-    const res = await next(e)
+    let input = e
+    let denied: string | null = null
+    try {
+      const l = await read($, leadA)
+      const d = decideSpawn(
+        {
+          prompt: e.prompt,
+          subagentType: e.subagentType,
+          fork: e.fork,
+          isWorkflow: e.workflow !== undefined,
+          isResume: e.resume !== undefined,
+          runId: e.workflow?.runId || null,
+          ...(e.model === undefined ? {} : { model: e.model }),
+        },
+        l,
+        lead,
+      )
+      if (d.kind === 'deny') {
+        denied = d.reason
+        await update($, leadA, cur => ({ ...pushNews(cur, `отказ в спавне: ${d.reason}`), denials: cur.denials + 1 }))
+      } else if (d.kind === 'rewrite') {
+        input = { ...e, model: d.model }
+        await update($, leadA, cur => ({ ...pushNews(cur, d.note), rewrites: cur.rewrites + 1 }))
+      } else if (d.kind === 'note') {
+        await update($, leadA, cur => pushNews(cur, d.note))
+      }
+    } catch (err) {
+      input = e
+      denied = null
+      try {
+        await update($, leadA, cur =>
+          cur.flags.includes('guard-error')
+            ? cur
+            : { ...pushNews(cur, `ограждение упало: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
+        )
+      } catch {
+        // nothing more to do: the spawn goes through
+      }
+    }
+    const res = denied !== null ? { deny: denied } : await next(input)
+    if (res.deny === undefined && e.subagentType === 'advisor' && input === e) {
+      try {
+        await update($, leadA, cur => ({ ...cur, fableCalls: cur.fableCalls + 1 }))
+      } catch {
+        // the count is lost, the spawn is not
+      }
+    }
     const now = await $.clock.now()
     const turn = await read($, turnA)
     await update($, agentsA, rows =>
