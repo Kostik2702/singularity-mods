@@ -14,7 +14,17 @@ import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
 import type { Pixmap } from '../lib/pixmap'
 import { forSurface } from '../lib/theme'
 import type { Theme } from '../lib/theme'
-import { MAIN, applySpawn, applyStepEnd, applyStepStart, applyStepUsage, applyToolEnd, applyToolStart, applyTurnStart } from './model'
+import {
+  MAIN,
+  applySpawn,
+  applyStepEnd,
+  applyStepStart,
+  applyStepUsage,
+  applyToolEnd,
+  applyToolStart,
+  applyTurnStart,
+  spawnedModelOf,
+} from './model'
 import { drawAgentsPane } from './pane'
 
 // Mission control's own observers and its tab. What it shares with the memory
@@ -82,16 +92,15 @@ async function settleStep(
   const usage = f.res?.usage ?? null
   const rows = await read($, agentsA)
   const row = rows.find(r => r.id === (f.agentId ?? MAIN))
-  // The agent's first request is the one whose model says whether the session forced another on it.
-  const isFirst = f.agentId !== null && row !== undefined && row.steps === 1
   const account = {
     agentId: f.agentId,
-    runId: row?.workflowRunId ?? null,
+    runId: row?.workflowRunId || null,
     label: labelOf(row, f.agentId),
     requestModel: f.requestModel,
     usage,
     serverTools: (f.res?.serverToolUses ?? []).map(u => u.name),
-    spawnedModel: isFirst ? (row?.model ?? null) : null,
+    // The agent's first request says whether the session forced another model than the spawn asked for.
+    spawnedModel: spawnedModelOf(row),
   }
   await update($, leadA, cur => accountStep(cur, account))
   const { oe } = stepPrice(usage, f.requestModel)
@@ -119,13 +128,14 @@ export function registerMission(
   // block answer and no request goes out; a workflow agent gets the tier's effort; main goes as it
   // is. A guard that throws lets the request through unchanged and says so once in the lead's news.
   // After the response its usage is settled into the ledger and the loop's row.
+  // Known limit: a step that streams before its spawn row settles (seen live) gets no block and no effort cap for that request.
   on('turn.step', async function* ($, e, next) {
     const agentId = e.agentId ?? null
     let input = e
     let decision: StepDecision = { kind: 'send' }
     try {
       const row = agentId === null ? undefined : (await read($, agentsA)).find(r => r.id === agentId)
-      const runId = row?.workflowRunId ?? null
+      const runId = row?.workflowRunId || null
       decision = decideStep(
         {
           agentId,
@@ -294,10 +304,11 @@ export function registerMission(
           description: e.description,
           prompt: e.prompt,
           model: res.model ?? e.model ?? null,
+          requestedModel: input.model ?? e.model ?? null,
           name: e.name ?? null,
           isBackground: e.background,
           isTeammate: e.isTeammate === true,
-          workflowRunId: e.workflow?.runId ?? null,
+          workflowRunId: e.workflow?.runId || null,
           turn,
           now,
         }),

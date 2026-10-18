@@ -201,23 +201,65 @@ test('observe never blocks on numbers', { options: { agentBudgetOE: '1', session
   expect(engine.stepsReached).toHaveLength(2)
 })
 
-test('workflow sonnet agent gets medium effort; an effort already set and an Agent call are left alone', async ($, on) => {
+test('workflow sonnet agent gets medium effort: a high is cut, a low stays, no effort gets medium', async ($, on) => {
   const engine = engineBeneath(on)
   await submit($, 'прогон')
   await spawn($, { subagentType: 'coder', description: 'в workflow', model: 'sonnet', workflow: 'wf_1' })
-  await spawn($, { subagentType: 'coder', description: 'через Agent', model: 'sonnet' })
 
-  await step($, 'a1', { model: SONNET })
+  await step($, 'a1', { model: SONNET, effort: 'high' })
   expect(engine.stepsReached.at(-1)?.effort).toBe('medium')
   expect((await rowOf($, 'a1'))?.effort).toBe('medium')
 
-  await step($, 'a1', { model: SONNET, effort: 'xhigh' })
-  expect(engine.stepsReached.at(-1)?.effort).toBe('xhigh')
-  expect((await rowOf($, 'a1'))?.effort).toBe('xhigh')
+  await step($, 'a1', { model: SONNET, effort: 'low' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('low')
+  expect((await rowOf($, 'a1'))?.effort).toBe('low')
 
-  await step($, 'a2', { model: SONNET })
-  expect(engine.stepsReached.at(-1)?.effort).toBeUndefined()
-  expect((await rowOf($, 'a2'))?.effort).toBeNull()
+  await step($, 'a1', { model: SONNET })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('medium')
+})
+
+test('workflow haiku is capped at low and opus at high', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'прогон')
+  await spawn($, { subagentType: 'coder', description: 'дешёвый', model: 'haiku', workflow: 'wf_1' })
+  await spawn($, { subagentType: 'coder', description: 'сильный', model: 'opus', workflow: 'wf_1' })
+  await step($, 'a1', { model: 'claude-haiku-5-5', effort: 'high' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('low')
+  await step($, 'a2', { model: 'claude-opus-5-5', effort: 'xhigh' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('high')
+  expect((await rowOf($, 'a2'))?.effort).toBe('high')
+})
+
+test('an Agent-spawned agent, a workflow fable agent and main keep their effort', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'прогон')
+  await spawn($, { subagentType: 'coder', description: 'через Agent', model: 'sonnet' })
+  await spawn($, { subagentType: 'coder', description: 'fable в workflow', model: 'opus', workflow: 'wf_1' })
+  await step($, 'a1', { model: SONNET, effort: 'high' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('high')
+  expect((await rowOf($, 'a1'))?.effort).toBe('high')
+  await step($, 'a2', { model: FABLE, effort: 'max' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('max')
+  await step($, undefined, { model: SONNET, effort: 'max' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('max')
+})
+
+test('an empty workflow run id is not a workflow: no run row, no effort cap', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'прогон')
+  await spawn($, { subagentType: 'coder', description: 'пустой id', model: 'sonnet', workflow: '' })
+  expect((await rowOf($, 'a1'))?.workflowRunId).toBeNull()
+  await step($, 'a1', { model: SONNET, effort: 'high' })
+  expect(engine.stepsReached.at(-1)?.effort).toBe('high')
+})
+
+test('the row remembers the model the spawn asked for, not the one core resolved', async ($, on) => {
+  engineBeneath(on, { spawnModel: 'claude-opus-5-5' })
+  await submit($, 'вопрос')
+  await spawn($, { subagentType: 'coder', description: 'просили sonnet', model: 'sonnet' })
+  await spawn($, { subagentType: 'coder', description: 'без модели' })
+  expect(await rowOf($, 'a1')).toMatchObject({ model: 'claude-opus-5-5', requestedModel: 'sonnet' })
+  expect(await rowOf($, 'a2')).toMatchObject({ requestedModel: null })
 })
 
 test('a step’s usage lands in the row as OE', async ($, on) => {

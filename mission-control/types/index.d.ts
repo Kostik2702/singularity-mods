@@ -125,6 +125,11 @@ export type AgentRow = {
   /** The prompt in one plain line, ≤ 240. */
   task: string
   model: string | null
+  /**
+   * The model the spawn asked for, as the guard sent it (before core resolved it); null when it named none.
+   * A row from before the field has none. The forced-model check compares against this, not `model`.
+   */
+  requestedModel: string | null
   isBackground: boolean
   isTeammate: boolean
   workflowRunId: string | null

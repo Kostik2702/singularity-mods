@@ -103,13 +103,16 @@ export type StepDecision = { kind: 'send' } | { kind: 'send'; effort: StepEffort
 const BLOCK_BUDGET = '[mission-control] остановлен до запроса: бюджет исчерпан'
 const BLOCK_HALT = '[mission-control] остановлен до запроса: заморожено владельцем'
 
+const EFFORT_ORDER: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const WORKFLOW_EFFORT: Readonly<Partial<Record<Tier, StepEffort>>> = { haiku: 'low', sonnet: 'medium', opus: 'high' }
 
 /**
  * The request guard (spec 6.4, 6.7). Main is never blocked and never rewritten: the lead must be able to
  * ask the owner. A subagent is blocked in enforce when it is frozen or its agent, run or session budget
- * is gone (the request in flight is never cut; only the next one is refused). A workflow agent whose
- * request names no effort gets the tier's; Fable and a model the table does not know are left alone.
+ * is gone (the request in flight is never cut; only the next one is refused). A workflow agent's effort
+ * is capped at its tier's (low < medium < high < xhigh < max; haiku low, sonnet medium, opus high): an
+ * absent or higher effort becomes the tier's, a lower one stays. A number, a level not in that order,
+ * Fable and a model the table does not know are left alone (R17: the engine fills in the session's effort).
  */
 export function decideStep(f: StepFacts, l: Lead, c: LeadConfig): StepDecision {
   if (f.agentId === null) return { kind: 'send' }
@@ -117,10 +120,17 @@ export function decideStep(f: StepFacts, l: Lead, c: LeadConfig): StepDecision {
     if (l.halted) return { kind: 'block', answer: BLOCK_HALT }
     if (isExhausted(budgetLeft(l, c, { agentId: f.agentId, runId: f.runId }))) return { kind: 'block', answer: BLOCK_BUDGET }
   }
-  if (f.isWorkflow && f.effort === undefined) {
+  if (f.isWorkflow) {
     const tier = tierOf(f.model)
-    const effort = tier === null ? undefined : WORKFLOW_EFFORT[tier]
-    if (effort !== undefined) return { kind: 'send', effort }
+    const cap = tier === null ? undefined : WORKFLOW_EFFORT[tier]
+    if (cap !== undefined) {
+      // The engine fills the session's effort in, so an absent one is rare: the cap is a ceiling, never a floor.
+      if (f.effort === undefined) return { kind: 'send', effort: cap }
+      // A number or a level this list does not know cannot be ranked: left as it is.
+      if (typeof f.effort === 'string' && EFFORT_ORDER.indexOf(f.effort) > EFFORT_ORDER.indexOf(cap)) {
+        return { kind: 'send', effort: cap }
+      }
+    }
   }
   return { kind: 'send' }
 }

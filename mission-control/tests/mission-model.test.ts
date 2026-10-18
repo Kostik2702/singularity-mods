@@ -21,6 +21,7 @@ import {
   needsReconcile,
   needsTick,
   phaseFromList,
+  spawnedModelOf,
 } from '../hooks/mission/model'
 import type { SpawnFacts } from '../hooks/mission/model'
 
@@ -40,6 +41,7 @@ function facts(over: Partial<SpawnFacts> = {}): SpawnFacts {
     isBackground: false,
     isTeammate: false,
     workflowRunId: null,
+    requestedModel: null,
     turn: 1,
     now: T0,
     ...over,
@@ -404,5 +406,33 @@ describe('a request settled (applyStepUsage)', () => {
     const before = spawned()
     applyStepUsage(before, { agentId: 'a1', oe: 5, model: 'x', effort: 'low' })
     expect(row(before, 'a1').oe).toBe(0)
+  })
+})
+
+describe('the model a spawn asked for (spawnedModelOf)', () => {
+  const asked = (requestedModel: string | null) => applySpawn([], facts({ model: 'claude-opus-5-5', requestedModel }))
+  const firstStep = (rows: AgentRow[]) => applyStepStart(rows, { agentId: 'a1', now: T0 })
+
+  test('the row keeps the requested model beside the resolved one', () => {
+    expect(row(asked('sonnet'), 'a1')).toMatchObject({ model: 'claude-opus-5-5', requestedModel: 'sonnet' })
+    expect(row(asked(null), 'a1').requestedModel).toBeNull()
+  })
+
+  test('it is the requested model on the first request only, never the resolved one', () => {
+    const first = firstStep(asked('sonnet'))
+    expect(spawnedModelOf(row(first, 'a1'))).toBe('sonnet')
+    expect(spawnedModelOf(row(firstStep(first), 'a1'))).toBeNull()
+  })
+
+  test('a spawn that asked for no model, a missing row, a row from before the field: null', () => {
+    expect(spawnedModelOf(row(firstStep(asked(null)), 'a1'))).toBeNull()
+    expect(spawnedModelOf(undefined)).toBeNull()
+    const old: Record<string, unknown> = { ...row(firstStep(asked('sonnet')), 'a1') }
+    delete old.requestedModel
+    expect(spawnedModelOf(old as unknown as AgentRow)).toBeNull()
+  })
+
+  test('main has no spawn model', () => {
+    expect(spawnedModelOf(row(applyStepStart([], { agentId: null, now: T0 }), MAIN))).toBeNull()
   })
 })

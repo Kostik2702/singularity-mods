@@ -143,6 +143,7 @@ export function mainRow(now: number): AgentRow {
     description: '',
     task: '',
     model: null,
+    requestedModel: null,
     isBackground: false,
     isTeammate: false,
     workflowRunId: null,
@@ -254,6 +255,8 @@ export type SpawnFacts = {
   description: string
   prompt: string
   model: string | null
+  /** The model the call asked for after the guard (before core resolved it); null when it named none. */
+  requestedModel: string | null
   name: string | null
   isBackground: boolean
   isTeammate: boolean
@@ -273,6 +276,7 @@ function newAgent(f: SpawnFacts, id: string): AgentRow {
     description: clip(f.description.trim(), DESCRIPTION_MAX),
     task: taskLine(f.prompt),
     model: f.model,
+    requestedModel: f.requestedModel,
     isBackground: f.isBackground,
     isTeammate: f.isTeammate,
     workflowRunId: f.workflowRunId,
@@ -342,6 +346,7 @@ export function applySpawn(rows: readonly AgentRow[], f: SpawnFacts): AgentRow[]
         description: r.description.length > 0 ? r.description : clip(f.description.trim(), DESCRIPTION_MAX),
         task: r.task.length > 0 ? r.task : taskLine(f.prompt),
         model: r.model ?? f.model,
+        requestedModel: r.requestedModel ?? f.requestedModel,
         name: r.name ?? f.name,
         toolUseId: r.toolUseId ?? f.toolUseId,
       }
@@ -385,6 +390,15 @@ export function applyStepUsage(
     model: at.model ?? r.model,
     effort: at.effort ?? r.effort ?? null,
   }))
+}
+
+/**
+ * The model the spawn asked for, on the agent's first request only (spec 6.7): what the forced-model check
+ * compares the answering model with. Never the resolved `model`, which core may already have forced.
+ * Null for main, a later request, a spawn that named no model, a missing row or one from before the field.
+ */
+export function spawnedModelOf(row: AgentRow | undefined): string | null {
+  return row !== undefined && row.id !== MAIN && row.steps === 1 ? (row.requestedModel ?? null) : null
 }
 
 /** A tool call begins in a loop: it acts, and the call is its current action. */

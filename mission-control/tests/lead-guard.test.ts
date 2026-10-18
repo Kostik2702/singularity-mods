@@ -219,21 +219,47 @@ describe('request guard', () => {
     expect(decideStep(sfacts(), spent, cfg({ sessionBudget: 1, agentBudget: 1 }))).toEqual({ kind: 'send' })
   })
 
-  test('workflow sonnet agent gets medium effort', () => {
-    const wf = (model: string, o: Partial<StepFacts> = {}) => sfacts({ isWorkflow: true, runId: 'wf_1', model, ...o })
-    expect(decideStep(wf('sonnet'), lead(), cfg())).toEqual({ kind: 'send', effort: 'medium' })
-    expect(decideStep(wf('claude-sonnet-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'medium' })
-    expect(decideStep(wf('claude-haiku-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'low' })
-    expect(decideStep(wf('claude-opus-5-5'), lead(), cfg())).toEqual({ kind: 'send', effort: 'high' })
-  })
+  describe('a workflow agent’s effort is capped at its tier (R17)', () => {
+    const wf = (model: string, effort?: StepFacts['effort']) =>
+      sfacts({ isWorkflow: true, runId: 'wf_1', model, ...(effort === undefined ? {} : { effort }) })
+    const cap = (effort: string) => ({ kind: 'send', effort })
 
-  test('effort is left alone: fable, an unknown model, an effort already set, a non-workflow agent', () => {
-    const wf = (o: Partial<StepFacts>) => sfacts({ isWorkflow: true, runId: 'wf_1', ...o })
-    expect(decideStep(wf({ model: 'claude-fable-5-1' }), lead(), cfg())).toEqual({ kind: 'send' })
-    expect(decideStep(wf({ model: 'claude-test' }), lead(), cfg())).toEqual({ kind: 'send' })
-    expect(decideStep(wf({ model: 'sonnet', effort: 'xhigh' }), lead(), cfg())).toEqual({ kind: 'send' })
-    expect(decideStep(wf({ model: 'sonnet', effort: 0 }), lead(), cfg())).toEqual({ kind: 'send' })
-    expect(decideStep(sfacts({ model: 'sonnet' }), lead(), cfg())).toEqual({ kind: 'send' })
+    test('no effort at all gets the tier’s', () => {
+      expect(decideStep(wf('sonnet'), lead(), cfg())).toEqual(cap('medium'))
+      expect(decideStep(wf('claude-sonnet-5-5'), lead(), cfg())).toEqual(cap('medium'))
+      expect(decideStep(wf('claude-haiku-5-5'), lead(), cfg())).toEqual(cap('low'))
+      expect(decideStep(wf('claude-opus-5-5'), lead(), cfg())).toEqual(cap('high'))
+    })
+
+    test('workflow sonnet agent gets medium effort: an incoming high is cut, a low stays', () => {
+      expect(decideStep(wf('claude-sonnet-5-5', 'high'), lead(), cfg())).toEqual(cap('medium'))
+      expect(decideStep(wf('claude-sonnet-5-5', 'xhigh'), lead(), cfg())).toEqual(cap('medium'))
+      expect(decideStep(wf('claude-sonnet-5-5', 'max'), lead(), cfg())).toEqual(cap('medium'))
+      expect(decideStep(wf('claude-sonnet-5-5', 'low'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('claude-sonnet-5-5', 'medium'), lead(), cfg())).toEqual({ kind: 'send' })
+    })
+
+    test('haiku is capped at low, opus at high; a lower effort is never raised', () => {
+      expect(decideStep(wf('claude-haiku-5-5', 'high'), lead(), cfg())).toEqual(cap('low'))
+      expect(decideStep(wf('claude-haiku-5-5', 'low'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('claude-opus-5-5', 'xhigh'), lead(), cfg())).toEqual(cap('high'))
+      expect(decideStep(wf('claude-opus-5-5', 'max'), lead(), cfg())).toEqual(cap('high'))
+      expect(decideStep(wf('claude-opus-5-5', 'high'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('claude-opus-5-5', 'medium'), lead(), cfg())).toEqual({ kind: 'send' })
+    })
+
+    test('left alone: fable, an unknown model, a numeric or unknown effort, a non-workflow agent, main', () => {
+      expect(decideStep(wf('claude-fable-5-1', 'max'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('claude-fable-5-1'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('claude-test', 'max'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('sonnet', 0), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('sonnet', 32000), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(wf('sonnet', 'ultra'), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(sfacts({ model: 'sonnet', effort: 'high' }), lead(), cfg())).toEqual({ kind: 'send' })
+      expect(decideStep(sfacts({ agentId: null, isWorkflow: true, model: 'sonnet', effort: 'max' }), lead(), cfg())).toEqual({
+        kind: 'send',
+      })
+    })
   })
 
   test('a block beats an effort rewrite', () => {

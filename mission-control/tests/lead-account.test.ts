@@ -101,6 +101,13 @@ describe('per-request accounting', () => {
     expect(l.news).toEqual(['модель навязана сессией: haiku → sonnet'])
   })
 
+  test('a spawn that asked for sonnet and was answered by opus is reported; one that asked for nothing is not', () => {
+    expect(accountStep(lead(), acc({ spawnedModel: 'sonnet', usage: usageOf('claude-opus-5-5') })).news).toEqual([
+      'модель навязана сессией: sonnet → opus',
+    ])
+    expect(accountStep(lead(), acc({ spawnedModel: null, usage: usageOf('claude-opus-5-5') })).news).toEqual([])
+  })
+
   test('no forced-model report when the tiers match, when the spawn model is unknown or null, or the usage names none', () => {
     expect(accountStep(lead(), acc({ spawnedModel: 'sonnet' })).news).toEqual([])
     expect(accountStep(lead(), acc({ spawnedModel: null })).news).toEqual([])
