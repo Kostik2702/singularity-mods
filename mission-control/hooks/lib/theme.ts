@@ -84,6 +84,8 @@ export type Theme = {
     phase: Record<AgentPhase, string>
     silent: string
     task: string
+    /** The label of the row with tier, effort and OE inside a working agent's frame. */
+    model: string
     why: string
     outcome: string
     gist: string
@@ -148,6 +150,7 @@ export const CLASSIC: Theme = {
     },
     silent: 'нет вестей',
     task: 'задача',
+    model: 'модель',
     why: 'зачем',
     outcome: 'итог',
     gist: 'суть',
@@ -282,6 +285,7 @@ export const WARHAMMER: Theme = {
     },
     silent: 'вокс молчит',
     task: 'обет',
+    model: 'модель',
     why: 'во имя',
     outcome: 'донесение',
     gist: 'суть',

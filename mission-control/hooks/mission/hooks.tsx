@@ -341,7 +341,7 @@ export function registerMission(
     }
     const ledger = await read($, leadA)
     const data = {
-      lead: { mode: lead.mode, session: ledger.session, limit: sessionLimit(ledger, lead), halted: ledger.halted },
+      lead: { mode: lead.mode, session: ledger.session, limit: sessionLimit(ledger, lead), halted: ledger.halted, agentLimit: lead.mode === 'enforce' ? lead.agentBudget : null },
       agents: await read($, agentsA),
       actions: await read($, actionsA),
       turn: await read($, turnA),

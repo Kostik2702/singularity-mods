@@ -218,7 +218,7 @@ test('a working sonnet row shows tier, effort and OE, on every surface', async (
   await step($, 'a1', { model: SONNET, effort: 'medium' })
   for (const surface of SURFACES) {
     const ui = await mountAgents($, surface)
-    expect(await ui.find({ text: /sonnet · medium · 1500 OE/ })).toBeDefined()
+    expect(await ui.find({ text: /модель: sonnet · medium · 1 500 OE/ })).toBeDefined()
     expect(await ui.find({ text: /null|undefined/ })).toBeUndefined()
     await ui.unmount()
   }
@@ -297,7 +297,7 @@ for (const [name, options] of THEMES) {
     await runCommand($, 'mc', 'halt')
     for (const surface of SURFACES) {
       const ui = await mountAgents($, surface)
-      expect(await ui.find({ text: /sonnet · medium · 300 OE/ })).toBeDefined()
+      expect(await ui.find({ text: /модель: sonnet · medium · 300 OE/ })).toBeDefined()
       expect(await ui.find({ text: /контроль · 300\/1 000 OE · ЗАМОРОЖЕНО/ })).toBeDefined()
       await ui.unmount()
     }
@@ -321,3 +321,88 @@ for (const [name, options] of THEMES) {
     }
   })
 }
+
+// ── Fix round 1 (R20): the facts live inside the frame, never on its top plate ──
+
+const LONG_TASK = 'разобрать парсер и переписать разбор заголовков в нескольких местах сразу'
+
+for (const [name, options] of THEMES) {
+  for (const cols of [40, 60]) {
+    test(`${name} theme, ${cols} cols: the model row is inside the card, the top plate keeps timer and steps`, { options }, async ($, on) => {
+      const engine = engineBeneath(on)
+      await submit($, 'go')
+      await spawn($, { subagentType: 'coder', description: LONG_TASK, model: 'sonnet' })
+      engine.stepAnswer({ usage: SPENT_1500 })
+      await step($, 'a1', { model: SONNET, effort: 'medium' })
+      for (const surface of SURFACES) {
+        const ui = await mountAgents($, surface, { cols, rows: 30 })
+        const lines = screen(await ui.drawn()).split('\n')
+        const plate = lines.filter(l => /coder|┏━┫/i.test(l) && !l.includes('обет') && !l.includes('задача'))
+        expect(plate.length).toBeGreaterThan(0)
+        for (const l of plate) expect(l).not.toMatch(/OE|sonnet|medium/)
+        const model = lines.filter(l => l.includes('модель:'))
+        expect(model).toHaveLength(1)
+        expect(model[0]).toContain('sonnet')
+        // The painter does not clip a Text: the row is cut by the mod, so it is measured.
+        for (const l of model) expect([...l.trim()].length).toBeLessThanOrEqual(cols - 2)
+        if (surface === 'terminal' && name === 'warhammer') {
+          for (const l of lines.filter(l => /^\s*[┃╔╚┏┗║]/.test(l))) expect([...l].length).toBeLessThanOrEqual(cols)
+        }
+        await ui.unmount()
+      }
+    })
+
+    test(`${name} theme, ${cols} cols: an ended agent keeps its report, with only the short tier after the name`, { options }, async ($, on) => {
+      const engine = engineBeneath(on)
+      await submit($, 'go')
+      await spawn($, { subagentType: 'coder', description: 'правка', model: 'sonnet' })
+      engine.stepAnswer({ usage: SPENT_1500 })
+      await step($, 'a1', { model: SONNET, effort: 'medium' })
+      await complete($, { agentId: 'a1', answer: 'Корень найден: регэксп. Детали ниже.' })
+      for (const surface of SURFACES) {
+        const ui = await mountAgents($, surface, { cols, rows: 30 })
+        const ended = screen(await ui.drawn()).split('\n').filter(l => /coder/i.test(l))
+        expect(ended.length).toBeGreaterThan(0)
+        expect(ended[0]).toMatch(/sonnet/)
+        expect(ended[0]).toMatch(/Корень/)
+        expect(ended[0]).not.toMatch(/medium|OE/)
+        await ui.unmount()
+      }
+    })
+  }
+}
+
+test('enforce with an agent budget shows spent/limit in the model row', { options: { budgetMode: 'enforce', agentBudgetOE: '5000' } }, async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'go')
+  await spawn($, { subagentType: 'coder', description: 'шаг', model: 'sonnet' })
+  engine.stepAnswer({ usage: SPENT_1500 })
+  await step($, 'a1', { model: SONNET, effort: 'medium' })
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /модель: sonnet · medium · 1 500\/5 000 OE/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('observe never shows the agent limit', { options: { agentBudgetOE: '5000' } }, async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'go')
+  await spawn($, { subagentType: 'coder', description: 'шаг', model: 'sonnet' })
+  engine.stepAnswer({ usage: SPENT_1500 })
+  await step($, 'a1', { model: SONNET, effort: 'medium' })
+  const ui = await mountAgents($, 'terminal')
+  expect(await ui.find({ text: /модель: sonnet · medium · 1 500 OE/ })).toBeDefined()
+  expect(await ui.find({ text: /5 000/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a model id the table does not know shows ? as its tier', async ($, on) => {
+  engineBeneath(on)
+  await spawn($, { subagentType: 'coder', description: 'шаг' })
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /модель: \?$/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

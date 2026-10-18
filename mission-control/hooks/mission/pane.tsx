@@ -2,7 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { COG, PORTRAIT, cells, isWarped, slateKit, stamp } from '../lib/frame'
-import { grouped, int } from '../lead/team'
+import { grouped } from '../lead/team'
 import { tierOf } from '../lead/price'
 import { fmtTokens } from '../lib/parse'
 import { thoughtFor } from '../lib/thoughts'
@@ -38,7 +38,7 @@ export type AgentsPaneData = {
   crestPix?: Pixmap | null
   portraitPix?: Record<string, Pixmap>
   /** The team-lead layer's state for the header; absent draws no header line. `limit` is null without a session budget. */
-  lead?: { mode: 'observe' | 'enforce'; session: number; limit: number | null; halted: boolean }
+  lead?: { mode: 'observe' | 'enforce'; session: number; limit: number | null; halted: boolean; agentLimit: number | null }
 }
 
 /** The header's words: «контроль · 300/1 000 OE», then «ЗАМОРОЖЕНО» when the owner halted the executors. */
@@ -171,6 +171,33 @@ function ago(ms: number): string {
   return ms < 5000 ? 'сейчас' : fmtDur(ms)
 }
 
+/**
+ * The text of the «модель» row inside a working agent's frame (spec 6.6): tier, effort and OE
+ * («sonnet · medium · 1 500/5 000 OE»). A part not known yet is left out; a model the table does not
+ * know is «?». Null for main, a refusal, an ended agent, or when nothing is known.
+ */
+export function modelText(row: AgentRow, d: AgentsPaneData): string | null {
+  if (row.id === MAIN || row.phase === 'denied' || isEnded(row.phase)) return null
+  const limit = d.lead?.agentLimit ?? null
+  const oe = limit !== null ? `${grouped(row.oe)}/${grouped(limit)} OE` : row.oe > 0 ? `${grouped(row.oe)} OE` : null
+  const tier = tierOf(row.model) ?? (row.model ? '?' : null)
+  const parts = [tier, row.effort, oe].filter((p): p is string => p !== null && p !== '')
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/** An ended agent shows only its short tier after the name, so the report stays in view. */
+function endedTier(row: AgentRow): string | null {
+  return row.id === MAIN || row.phase === 'denied' || !isEnded(row.phase) ? null : tierOf(row.model)
+}
+
+/** The model row, cut to `width` cells; null when there is nothing to say. */
+function modelRow(table: ElementTable, t: Theme, d: AgentsPaneData, indent: string, row: AgentRow, width: number) {
+  const text = modelText(row, d)
+  if (text === null) return null
+  const room = Math.max(4, width - [...indent].length - [...t.words.model].length - 2)
+  return detailRow(table, t, indent, t.words.model, clip(text, room), t.colors.ink2)
+}
+
 /** What a tab draws an agent with: its mark (silent wins over the phase) and the facts after its name. */
 function agentFacts(row: AgentRow, d: AgentsPaneData, t: Theme): { mark: Mark; said: string[] } {
   const w = t.words
@@ -191,9 +218,6 @@ function agentFacts(row: AgentRow, d: AgentsPaneData, t: Theme): { mark: Mark; s
   if (silent) said.push(`${w.silent} ${fmtDur(d.now - row.lastEventAt)}`)
   else if (row.phase === 'failed' || row.phase === 'aborted' || row.phase === 'waiting' || row.phase === 'idle') said.push(mark.label)
   if (isEnded(row.phase) && row.tokens > 0) said.push(`${fmtTokens(row.tokens)} ток.`)
-  // Tier, effort and OE (spec 6.6): a part that is not known yet is left out, never written as «null».
-  const facts = [tierOf(row.model), row.effort, row.oe > 0 ? `${int(row.oe)} OE` : null].filter((p): p is string => p !== null && p !== '')
-  if (facts.length > 0) said.push(facts.join(' · '))
   return { mark, said }
 }
 
@@ -347,6 +371,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     const ended = isEnded(row.phase)
     const viewed = !isMain && d.viewAgentId === row.id
     const tail = ended && row.report !== null ? ` — ${row.report}` : ''
+    const tier = endedTier(row)
+    const shown = tier === null ? said : [tier, ...said]
     out.push(
       <Text wrap="truncate-end">
         <Text color={c.muted}>{lead}</Text>
@@ -362,7 +388,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
           {agentName(row, t)}
         </Text>
         <Text color={c.muted}>
-          {said.length > 0 ? ` · ${said.join(' · ')}` : ''}
+          {shown.length > 0 ? ` · ${shown.join(' · ')}` : ''}
           {tail}
         </Text>
       </Text>,
@@ -371,6 +397,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
     if (!isMain) {
       const task = row.description.length > 0 ? row.description : row.task
       if (task.length > 0) out.push(detailRow(table, t, indent, w.task, task, c.ink2))
+      const model = modelRow(table, t, d, indent, row, inner)
+      if (model !== null) out.push(model)
     }
     if (row.intent !== null) out.push(...whyRows(table, t, indent, isMain && !isWorking(row.phase) ? w.outcome : w.why, row.intent, inner))
     if (isWorking(row.phase)) out.push(nowRow(table, t, d, indent, row))
@@ -518,13 +546,15 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     const viewed = !isMain && d.viewAgentId === row.id
     if (ended && !isMain) {
       const tail = row.report !== null ? ` — ${row.report}` : ''
+      const tier = endedTier(row)
+      const shown = tier === null ? said : [tier, ...said]
       out.push(
         <Text wrap="truncate-end">
           <Text color={c.muted}>{lead} </Text>
           <Text color={mark.color}>{mark.icon} </Text>
           <Text color={c.ink2}>{agentName(row, t)}</Text>
           <Text color={c.muted}>
-            {said.length > 0 ? ` · ${said.join(' · ')}` : ''}
+            {shown.length > 0 ? ` · ${shown.join(' · ')}` : ''}
             {tail}
           </Text>
         </Text>,
@@ -554,6 +584,8 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     if (!isMain) {
       const task = row.description.length > 0 ? row.description : row.task
       if (task.length > 0) lines.push(detailRow(table, t, '', w.task, task, c.ink2))
+      const model = modelRow(table, t, d, '', row, body)
+      if (model !== null) lines.push(model)
     }
     if (row.intent !== null) lines.push(...whyRows(table, t, '', isMain && !working ? w.outcome : w.why, row.intent, body))
     if (working) lines.push(nowRow(table, t, d, '', row))
