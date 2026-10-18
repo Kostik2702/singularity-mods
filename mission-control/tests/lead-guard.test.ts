@@ -95,8 +95,18 @@ describe('spawn guard', () => {
   })
 
   test('observe never denies on numbers', () => {
-    const spent = lead({ session: 9e9, halted: true })
+    const spent = lead({ session: 9e9 })
     expect(decideSpawn(facts(), spent, cfg({ sessionBudget: 1 }))).toEqual({ kind: 'pass' })
+  })
+
+  test('the owner’s halt denies in every mode, forks and resumes too, with its own reason', () => {
+    const reason = 'заморожено владельцем — остановись и спроси владельца'
+    for (const mode of ['observe', 'enforce'] as const) {
+      const c = cfg({ mode })
+      expect(decideSpawn(facts(), lead({ halted: true }), c)).toEqual({ kind: 'deny', reason })
+      expect(decideSpawn(facts({ fork: true }), lead({ halted: true }), c)).toEqual({ kind: 'deny', reason })
+      expect(decideSpawn(facts({ isResume: true }), lead({ halted: true }), c)).toEqual({ kind: 'deny', reason })
+    }
   })
 
   test('enforce denies when the session is spent', () => {
@@ -215,8 +225,13 @@ describe('request guard', () => {
   })
 
   test('observe never blocks on numbers', () => {
-    const spent = lead({ session: 9e9, halted: true, byAgent: { a1: 9e9 } })
+    const spent = lead({ session: 9e9, byAgent: { a1: 9e9 } })
     expect(decideStep(sfacts(), spent, cfg({ sessionBudget: 1, agentBudget: 1 }))).toEqual({ kind: 'send' })
+  })
+
+  test('the owner’s halt blocks a subagent in observe too, main never', () => {
+    expect(decideStep(sfacts(), lead({ halted: true }), cfg())).toEqual({ kind: 'block', answer: BLOCK_HALT })
+    expect(decideStep(sfacts({ agentId: null }), lead({ halted: true }), cfg())).toEqual({ kind: 'send' })
   })
 
   describe('a workflow agent’s effort is capped at its tier (R17)', () => {

@@ -20,7 +20,8 @@ export const BUDGET_NO_LIMIT = 'mission-control: лимит сессии не з
 const FLAG_80 = 'budget80'
 const FLAG_100 = 'budget100'
 
-// The words the Agents tab uses for a row's phase.
+// The words the Agents tab uses for a row's phase. Deliberately theme-independent: these are read by the
+// model, so they stay the same words whatever theme the owner picked.
 const PHASE_WORDS: Readonly<Record<AgentPhase, string>> = {
   starting: 'запуск',
   thinking: 'думает',
@@ -103,6 +104,7 @@ export function raiseBudget(l: Lead, c: LeadConfig, n: number): Lead {
   return { ...l, extra, flags }
 }
 
-export const haltLead = (l: Lead): Lead => pushNews({ ...l, halted: true }, 'владелец остановил исполнителей')
-export const resumeLead = (l: Lead): Lead => pushNews({ ...l, halted: false }, 'владелец снял заморозку')
+/** Idempotent: freezing a frozen session changes nothing and tells the lead nothing. */
+export const haltLead = (l: Lead): Lead => (l.halted ? l : pushNews({ ...l, halted: true }, 'владелец остановил исполнителей'))
+export const resumeLead = (l: Lead): Lead => (l.halted ? pushNews({ ...l, halted: false }, 'владелец снял заморозку') : l)
 export const soloLead = (l: Lead): Lead => ({ ...l, solo: true })

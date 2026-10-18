@@ -33,6 +33,7 @@ export const FABLE_REASON_MARKER = 'ПОЧЕМУ FABLE:'
 
 const DENY_COUNCIL = 'Council запускается только командой владельца — попроси его'
 const DENY_BUDGET = 'бюджет исчерпан — остановись и спроси владельца'
+const DENY_HALT = 'заморожено владельцем — остановись и спроси владельца'
 
 // A marker counts only at the start of a line (indentation allowed): prose that merely mentions one is not a mission.
 const atLineStart = (marker: string): RegExp => new RegExp(`^[ \\t]*${marker}`, 'm')
@@ -50,6 +51,8 @@ const hasFableReason = (prompt: string): boolean => FABLE_REASON.test(prompt)
  * An advisor with no model is Fable: its own definition names the model, so the guard treats it as asked for.
  */
 export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecision {
+  // The owner's halt (R19) freezes in every mode, forks and resumes included: nothing new starts.
+  if (l.halted) return { kind: 'deny', reason: DENY_HALT }
   const rewritable = !f.fork && !f.isResume
   let rewrite: { model: string; note: string } | null = null
   let countsAsFable = false
@@ -76,7 +79,7 @@ export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecisio
     }
   }
 
-  if (c.mode === 'enforce' && (l.halted || isExhausted(budgetLeft(l, c, { agentId: null, runId: f.runId })))) {
+  if (c.mode === 'enforce' && isExhausted(budgetLeft(l, c, { agentId: null, runId: f.runId }))) {
     return { kind: 'deny', reason: DENY_BUDGET }
   }
 
@@ -116,8 +119,9 @@ const WORKFLOW_EFFORT: Readonly<Partial<Record<Tier, StepEffort>>> = { haiku: 'l
  */
 export function decideStep(f: StepFacts, l: Lead, c: LeadConfig): StepDecision {
   if (f.agentId === null) return { kind: 'send' }
+  // The owner's halt (R19) freezes in every mode; only the numbers wait for enforce.
+  if (l.halted) return { kind: 'block', answer: BLOCK_HALT }
   if (c.mode === 'enforce') {
-    if (l.halted) return { kind: 'block', answer: BLOCK_HALT }
     if (isExhausted(budgetLeft(l, c, { agentId: f.agentId, runId: f.runId }))) return { kind: 'block', answer: BLOCK_BUDGET }
   }
   if (f.isWorkflow) {

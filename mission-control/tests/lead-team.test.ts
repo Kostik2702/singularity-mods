@@ -212,10 +212,33 @@ test('halt freezes, resume releases', { options: { budgetMode: 'enforce' } }, as
   expect(engine.stepsReached.map(s => s.agentId)).toEqual([undefined, 'a1'])
 })
 
-test('halt in observe mode says it only informs', async ($, on) => {
+test('halt freezes in observe mode too: steps blocked, spawns denied, resume releases both', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'вопрос')
+  await spawn($, { subagentType: 'coder', description: 'шаг', model: 'sonnet' })
+  const said = await runCommand($, 'mc', 'halt')
+  expect(said).not.toContain('наблюдени')
+  expect((await step($, 'a1', { model: SONNET })).answer).toBe(BLOCK_HALT)
+  const denied = await spawn($, { subagentType: 'coder', description: 'ещё', model: 'sonnet' })
+  expect(denied.deny).toBe('заморожено владельцем — остановись и спроси владельца')
+  expect((await step($, undefined, { model: SONNET })).answer).not.toBe(BLOCK_HALT)
+  expect(engine.stepsReached.map(s => s.agentId)).toEqual([undefined])
+
+  await runCommand($, 'mc', 'resume')
+  expect((await step($, 'a1', { model: SONNET })).answer).not.toBe(BLOCK_HALT)
+  expect((await spawn($, { subagentType: 'coder', description: 'ещё', model: 'sonnet' })).deny).toBeUndefined()
+})
+
+test('halt and resume are idempotent: no repeated news, resume when not frozen says so', async ($, on) => {
   engineBeneath(on)
   await submit($, 'вопрос')
-  expect(await runCommand($, 'mc', 'halt')).toContain('наблюдени')
+  expect(await runCommand($, 'mc', 'resume')).toBe('mission-control: исполнители не заморожены')
+  expect(newsOf(await team($))).toEqual([])
+  await runCommand($, 'mc', 'halt')
+  await runCommand($, 'mc', 'halt')
+  expect(newsOf(await team($))).toEqual(['владелец остановил исполнителей'])
+  await runCommand($, 'mc', 'resume')
+  expect(newsOf(await team($))).toEqual(['владелец остановил исполнителей', 'владелец снял заморозку'])
 })
 
 test('solo reaches the next digest once', async ($, on) => {

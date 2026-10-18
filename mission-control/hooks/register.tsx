@@ -757,10 +757,10 @@ export const register: Register = (on, options) => {
     }
     if (words.length === 1 && words[0] === 'halt') {
       await update($, leadA, haltLead)
-      const note = leadConfig.mode === 'enforce' ? '' : ' В режиме наблюдения заморозка только сообщается лиду.'
-      return { text: `mission-control: исполнители остановлены (/mc resume — снять).${note}` }
+      return { text: 'mission-control: исполнители остановлены (/mc resume — снять).' }
     }
     if (words.length === 1 && words[0] === 'resume') {
+      if (!(await read($, leadA)).halted) return { text: 'mission-control: исполнители не заморожены' }
       await update($, leadA, resumeLead)
       return { text: 'mission-control: заморозка снята.' }
     }
