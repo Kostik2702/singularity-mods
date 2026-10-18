@@ -26,7 +26,9 @@ function holding(rows: readonly AgentRow[], now: number): Alarm[] {
   const out: Alarm[] = []
   for (const r of rows) {
     if (r.id === MAIN || !isConfirmed(r) || !isWorking(r.phase)) continue
-    if (r.phase !== 'waiting' && now - r.lastEventAt >= SILENCE_MS) {
+    // An agent waiting on its own running call is not stalled: the long-call rule owns that case.
+    const isCalling = r.current !== null && r.current.status === 'run'
+    if (r.phase !== 'waiting' && !isCalling && now - r.lastEventAt >= SILENCE_MS) {
       out.push({ agentId: r.id, kind: 'silent', minutes: Math.floor((now - r.lastEventAt) / MIN_MS) })
     }
     if (r.current !== null && r.current.status === 'run' && now - r.current.startedAt > LONG_CALL_MS) {
@@ -101,9 +103,15 @@ function wakeText(rows: readonly AgentRow[], alarms: readonly Alarm[]): string {
 export function watchStep(l: Lead, rows: readonly AgentRow[], now: number): { lead: Lead; wake: string | null } {
   const sent = rearmed(rows, now, l.alarmsSent)
   const alarms = alarmsOf(rows, now, sent)
-  if (alarms.length === 0) return { lead: sent === l.alarmsSent ? l : { ...l, alarmsSent: sent }, wake: null }
-  let lead: Lead = { ...l, alarmsSent: { ...sent, ...Object.fromEntries(alarms.map(a => [keyOf(a), now])) } }
+  const raised = { ...sent, ...Object.fromEntries(alarms.map(a => [keyOf(a), now])) }
+  // Candidates for a wake: alarms that still hold and were raised after the last wake (a deferred one included).
+  const since = l.lastWakeAt ?? -Infinity
+  const due = holding(rows, now).filter(a => (raised[keyOf(a)] ?? -Infinity) > since)
+  if (alarms.length === 0 && due.length === 0) return { lead: sent === l.alarmsSent ? l : { ...l, alarmsSent: sent }, wake: null }
+  let lead: Lead = { ...l, alarmsSent: raised }
   for (const a of alarms) lead = pushNews(lead, `${labelOf(rows, a.agentId)} — ${phrase(a)}`)
-  if (!leadIdle(rows) || !mayWake(l, now)) return { lead, wake: null }
-  return { lead: { ...lead, lastWakeAt: now }, wake: wakeText(rows, alarms) }
+  if (due.length === 0 || !leadIdle(rows) || !mayWake(l, now)) {
+    return { lead: alarms.length === 0 && sent === l.alarmsSent ? l : lead, wake: null }
+  }
+  return { lead: { ...lead, lastWakeAt: now }, wake: wakeText(rows, due) }
 }

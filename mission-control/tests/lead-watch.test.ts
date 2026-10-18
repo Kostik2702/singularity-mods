@@ -137,6 +137,39 @@ describe('watchStep', () => {
     expect(second.lead.news).toHaveLength(2)
   })
 
+  test('an alarm deferred while the lead was busy wakes it once it idles', () => {
+    const busy = watchStep(EMPTY_LEAD, [main('thinking'), agent('a1')], T + 15 * MIN)
+    expect(busy.wake).toBeNull()
+    const idle = watchStep(busy.lead, [main('idle'), agent('a1')], T + 16 * MIN)
+    expect(idle.wake).toContain('нет вестей 16 мин')
+    expect(idle.lead.lastWakeAt).toBe(T + 16 * MIN)
+    expect(watchStep(idle.lead, [main('idle'), agent('a1')], T + 17 * MIN).wake).toBeNull()
+  })
+
+  test('two alarms 2 minutes apart: the first wakes, the second waits for the 10 minutes', () => {
+    const rows = [main('idle'), agent('a1', { description: 'первая' }), agent('a2', { description: 'вторая', lastEventAt: T + 2 * MIN })]
+    const first = watchStep(EMPTY_LEAD, rows.slice(0, 2), T + 15 * MIN)
+    expect(first.wake).toContain('первая')
+    const second = watchStep(first.lead, rows, T + 17 * MIN)
+    expect(second.wake).toBeNull()
+    expect(watchStep(second.lead, rows, T + 24 * MIN).wake).toBeNull()
+    const third = watchStep(second.lead, rows, T + 25 * MIN)
+    expect(third.wake).toContain('вторая')
+    expect(third.wake).not.toContain('первая')
+  })
+
+  test('an alarm cleared by re-arm never wakes', () => {
+    const busy = watchStep(EMPTY_LEAD, [main('thinking'), agent('a1')], T + 15 * MIN)
+    const alive = [main('idle'), agent('a1', { lastEventAt: T + 16 * MIN })]
+    expect(watchStep(busy.lead, alive, T + 17 * MIN).wake).toBeNull()
+  })
+
+  test('a 20-minute running call gives only a long-call alarm, no silent one', () => {
+    const rows = [agent('a1', { phase: 'acting', lastEventAt: T, current: call(T) })]
+    expect(alarmsOf(rows, T + 21 * MIN, {})).toEqual([{ agentId: 'a1', kind: 'long-call', minutes: 21 }])
+    expect(alarmsOf(rows, T + 16 * MIN, {})).toEqual([])
+  })
+
   test('nothing to say returns the same lead', () => {
     expect(watchStep(EMPTY_LEAD, [main('idle'), agent('a1')], T + MIN).lead).toBe(EMPTY_LEAD)
   })
