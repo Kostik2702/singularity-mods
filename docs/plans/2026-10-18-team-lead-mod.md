@@ -8,6 +8,8 @@
 
 **Tech Stack:** Claude Code 2.1.302 function-hooks mods (TSX, `claude-code`, `claude-code/testing`), TypeScript 5.6.3 strict. Gate: `tools/verify.sh`.
 
+**Task 3 live check (2026-10-18, session started after the settings edit, `snapshot` field `model`):** `general-purpose` Agent without `model` → `claude-sonnet-5-5`; workflow `wf_98d6fade-944`, 3 agents, no model in the script → all three `claude-sonnet-5-5`; Agent with `model: "opus"` → `claude-opus-5-5[1m]` (the call parameter wins; the alias resolves to the lead's 1M-context variant). `CLAUDE_CODE_SUBAGENT_MODEL` covers workflow agents — no default-model branch in the spawn guard.
+
 **Spec:** `docs/specs/2026-10-18-team-lead-delegation-design.md` (part B, §6). Read it with this plan. Decisions D1–D13 there are the owner's; §6.7 lists the calls made after the spec check.
 
 ## Global Constraints
