@@ -283,6 +283,10 @@ export async function spawn(
     fork?: boolean
     /** Makes the spawn a workflow `agent()` call of this run. */
     workflow?: string
+    /** The spawn runs in the background (default: it does not). */
+    background?: boolean
+    /** The spawn starts a teammate. */
+    isTeammate?: boolean
   },
 ) {
   seq += 1
@@ -293,8 +297,9 @@ export async function spawn(
     subagentType: args.subagentType,
     provider: { plugin: 'engine', tier: 'core' },
     parentModel: 'claude-test',
-    background: false,
+    background: args.background ?? false,
     fork: args.fork ?? false,
+    ...(args.isTeammate === true ? { isTeammate: true as const } : {}),
     ...(args.model === undefined ? {} : { model: args.model }),
     ...(args.workflow === undefined ? {} : { workflow: { runId: args.workflow, agentIndex: 1 } }),
     ...(args.parentAgentId === undefined ? {} : { parentAgentId: args.parentAgentId }),

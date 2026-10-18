@@ -28,9 +28,10 @@ import type { Theme } from './lib/theme'
 import { AGENTS_PANE, registerMission } from './mission/hooks'
 import { leadConfigOf } from './lead/config'
 import { takeDigest } from './lead/digest'
-import { appendJournal, journalLine } from './lead/journal'
+import { appendJournal, journalLine, runOe } from './lead/journal'
 import { EMPTY_LEAD, pushNews } from './lead/ledger'
-import { BUDGET_BAD, BUDGET_NO_LIMIT, TEAM_TOOL, budgetIncrement, haltLead, raiseBudget, resumeLead, sessionLimit, soloLead, teamReport, teamTable } from './lead/team'
+import { endedLine, rowLabel } from './lead/news'
+import { BUDGET_BAD, BUDGET_NO_LIMIT, PHASE_WORDS, TEAM_TOOL, budgetIncrement, haltLead, raiseBudget, resumeLead, sessionLimit, soloLead, teamReport, teamTable } from './lead/team'
 import { watchStep } from './lead/watch'
 import { applyComplete, applyList, clearEnded, isWorking, needsReconcile, needsTick } from './mission/model'
 import type { ListedAgent } from './mission/model'
@@ -733,6 +734,13 @@ export const register: Register = (on, options) => {
         const ended = (await read($, agentsA)).find(r => r.id === e.agentId)
         if (ended !== undefined && (ended.phase === 'done' || ended.phase === 'failed' || ended.phase === 'aborted')) {
           await appendJournal($, journalLine(ended))
+          // The lead hears of the end (spec 6.6): outcome and the OE of this run, as the journal counts it.
+          try {
+            const line = endedLine({ label: rowLabel(ended), outcome: PHASE_WORDS[ended.phase], oe: runOe(ended) })
+            await update($, leadA, cur => pushNews(cur, line))
+          } catch {
+            // the line is lost, the end is not
+          }
           // What is written is not written again: a resume's next line starts from here.
           await update($, agentsA, rows => rows.map(r => (r.id === ended.id ? { ...r, journaledOe: ended.oe, journaledSteps: ended.steps } : r)))
         }

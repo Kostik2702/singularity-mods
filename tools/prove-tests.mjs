@@ -47,6 +47,13 @@ const MUTANTS = [
   { name: 'lead-council-closes-on-main-turn-complete', file: 'hooks/register.tsx', from: "if (e.agentId === undefined) await chime($, 'vox')", to: "if (e.agentId === undefined) { await update($, leadA, l => ({ ...l, councilTurn: null })); await chime($, 'vox') }" },
   { name: 'lead-council-closes-with-member-working', file: 'hooks/lead/council.ts', from: 'return working ? l : { ...l, councilTurn: null, councilAgents: [] }', to: 'return { ...l, councilTurn: null, councilAgents: [] }' },
   { name: 'lead-council-closed-by-any-origin', file: 'hooks/lead/council.ts', from: '!OWNER_ORIGINS.includes(p.origin)', to: 'false' },
+  // The digest says who started and who finished; a row from before 0.4.0 has no oe.
+  { name: 'lead-start-line-dropped', file: 'hooks/mission/hooks.tsx', from: 'if (res.deny === undefined && e.isTeammate !== true) {', to: 'if (res.deny === "never" && e.isTeammate !== true) {' },
+  { name: 'lead-start-of-teammate-told', file: 'hooks/mission/hooks.tsx', from: 'if (res.deny === undefined && e.isTeammate !== true) {', to: 'if (res.deny === undefined) {' },
+  { name: 'lead-foreground-spawn-unmarked', file: 'hooks/lead/news.ts', from: 'return f.background ? line : `${line} · не в фоне`', to: 'return line' },
+  { name: 'lead-end-line-dropped', file: 'hooks/register.tsx', from: 'await update($, leadA, cur => pushNews(cur, line))', to: 'await update($, leadA, cur => cur)' },
+  { name: 'lead-end-oe-is-lifetime', file: 'hooks/lead/journal.ts', from: '(row.oe ?? 0) - (row.journaledOe ?? 0)', to: '(row.oe ?? 0)' },
+  { name: 'lead-team-row-without-oe', file: 'hooks/lead/team.ts', from: 'const oe = r.oe ?? 0', to: 'const oe = r.oe' },
   { name: 'lead-council-member-not-remembered', file: 'hooks/mission/hooks.tsx', from: 'memberId !== undefined && isCouncilPrompt(e.prompt)', to: 'memberId === "never" && isCouncilPrompt(e.prompt)' },
 ]
 

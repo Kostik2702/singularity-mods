@@ -18,6 +18,11 @@ export const ROTATE_BYTES = 3 * 1024 * 1024
 const PLUGIN_DIR = 'plugins/data/mission-control'
 
 /**
+ * The OE of the run that just ended (since the spawn or the last resume). A row written before 0.4.0 has no `oe`: 0.
+ */
+export const runOe = (row: AgentRow): number => (row.oe ?? 0) - (row.journaledOe ?? 0)
+
+/**
  * The journal line of a finished executor: exactly `ts, type, tier, effort, turns, oe, ms, outcome`.
  * `type` is the subagentType, `tier` the model family (`?` when the table does not know the model), `turns` the
  * model steps it made, `oe` its own Opus-equivalent spend, `ms` its run time, `outcome` its final phase. All
@@ -32,7 +37,7 @@ export function journalLine(row: AgentRow): string {
     effort: row.effort,
     // A resumed executor ends again: the line holds only the run that just ended, so lines sum to the row's total.
     turns: row.steps - (row.journaledSteps ?? 0),
-    oe: row.oe - (row.journaledOe ?? 0),
+    oe: runOe(row),
     ms: Math.max(0, ts - (row.runStartedAt ?? row.startedAt)),
     outcome: row.phase,
   })

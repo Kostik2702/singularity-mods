@@ -22,7 +22,7 @@ const FLAG_100 = 'budget100'
 
 // The words the Agents tab uses for a row's phase. Deliberately theme-independent: these are read by the
 // model, so they stay the same words whatever theme the owner picked.
-const PHASE_WORDS: Readonly<Record<AgentPhase, string>> = {
+export const PHASE_WORDS: Readonly<Record<AgentPhase, string>> = {
   starting: 'запуск',
   thinking: 'думает',
   acting: 'работает',
@@ -65,7 +65,9 @@ function listed(rows: readonly AgentRow[], now: number | undefined): AgentRow[] 
 
 function lineOf(r: AgentRow, c: LeadConfig): string {
   const tier = tierOf(r.model) ?? '?'
-  const spent = c.agentBudget === null ? int(r.oe) : `${int(r.oe)}/${int(c.agentBudget)}`
+  // A row written before 0.4.0 has no `oe`.
+  const oe = r.oe ?? 0
+  const spent = c.agentBudget === null ? int(oe) : `${int(oe)}/${int(c.agentBudget)}`
   const task = clip(r.task.length > 0 ? r.task : r.description, TEAM_TASK_MAX)
   return [r.id, tier, r.effort ?? '—', task, String(r.steps), spent, PHASE_WORDS[r.phase]].join(' · ')
 }

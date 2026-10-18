@@ -179,7 +179,9 @@ function ago(ms: number): string {
 export function modelText(row: AgentRow, d: AgentsPaneData): string | null {
   if (row.id === MAIN || row.phase === 'denied' || isEnded(row.phase)) return null
   const limit = d.lead?.agentLimit ?? null
-  const oe = limit !== null ? `${grouped(row.oe)}/${grouped(limit)} OE` : row.oe > 0 ? `${grouped(row.oe)} OE` : null
+  // A row written before 0.4.0 has no `oe`.
+  const spent = row.oe ?? 0
+  const oe = limit !== null ? `${grouped(spent)}/${grouped(limit)} OE` : spent > 0 ? `${grouped(spent)} OE` : null
   const tier = tierOf(row.model) ?? (row.model ? '?' : null)
   const parts = [tier, row.effort, oe].filter((p): p is string => p !== null && p !== '')
   return parts.length > 0 ? parts.join(' · ') : null

@@ -9,7 +9,8 @@ import { markCouncilAgent } from '../lead/council'
 import { decideSpawn, decideStep, isCouncilPrompt } from '../lead/guard'
 import type { SpawnDecision, StepDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
-import { isFable } from '../lead/price'
+import { agentLabel, rowLabel, startedLine } from '../lead/news'
+import { isFable, tierOf } from '../lead/price'
 import { TEAM_TOOL, sessionLimit } from '../lead/team'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
@@ -80,7 +81,7 @@ async function noteFableLead($: EngineInterface): Promise<void> {
 function labelOf(row: AgentRow | undefined, agentId: string | null): string {
   if (agentId === null) return 'лид'
   if (row === undefined) return agentId
-  return [row.description, row.name ?? '', row.type].find(t => t.length > 0) ?? agentId
+  return rowLabel(row)
 }
 
 /**
@@ -326,6 +327,22 @@ export function registerMission(
       )
     } catch {
       // unobserved
+    }
+    // The lead hears of a start (spec 6.6): an executor, not a teammate; a refused spawn started nothing.
+    if (res.deny === undefined && e.isTeammate !== true) {
+      try {
+        // The spawn carries no effort: a resumed agent's row knows it, a new one learns it from its first request.
+        const row = res.agentId === undefined ? undefined : (await read($, agentsA)).find(r => r.id === res.agentId)
+        const line = startedLine({
+          label: agentLabel({ description: e.description, name: e.name ?? null, type: e.subagentType }, res.agentId ?? ''),
+          tier: tierOf(res.model ?? input.model ?? e.model),
+          effort: row?.effort ?? null,
+          background: e.background,
+        })
+        await update($, leadA, cur => pushNews(cur, line))
+      } catch {
+        // the line is lost, the spawn is not
+      }
     }
     // The deny is delivered: a later spawn that shares the id (a workflow run's agents do) must not meet it.
     decidedDenies.delete(e.tool_use_id)
