@@ -33,10 +33,20 @@ describe('lead config', () => {
     expect(leadConfigOf({ budgetMode: 1, sessionBudgetOE: 5 }).sessionBudget).toBe(null)
   })
   test('any mode but enforce is observe', () => expect(leadConfigOf({ budgetMode: 'ENFORCE' }).mode).toBe('observe'))
-  test('fableCap is a positive integer or 3', () => {
+  test('fableCap is a non-negative integer, 0 forbids Fable, anything else is 3', () => {
     expect(leadConfigOf({ fableCap: '5' }).fableCap).toBe(5)
-    for (const bad of ['0', '-1', '2.5', '']) expect(leadConfigOf({ fableCap: bad }).fableCap).toBe(3)
+    expect(leadConfigOf({ fableCap: '0' }).fableCap).toBe(0)
+    expect(leadConfigOf({ fableCap: ' 7 ' }).fableCap).toBe(7)
+    for (const bad of ['-1', '2.5', '', 'x', '0x10', '1e6', '+5']) expect(leadConfigOf({ fableCap: bad }).fableCap).toBe(3)
   })
+  test('integers are digits only: hex, exponent, fraction and unsafe sizes are refused', () => {
+    for (const bad of ['0x10', '1e6', '1.5', '+5', '99999999999999999999']) {
+      expect([bad, leadConfigOf({ sessionBudgetOE: bad }).sessionBudget]).toEqual([bad, null])
+    }
+    expect(leadConfigOf({ sessionBudgetOE: ' 1000 ' }).sessionBudget).toBe(1000)
+  })
+  test('budgetLeft: extra on top of no session limit is still no limit', () =>
+    expect(budgetLeft({ ...EMPTY_LEAD, extra: 500 }, cfg(), { agentId: null, runId: null }).session).toBe(null))
   test('timing constants', () => {
     expect(SILENCE_MS).toBe(15 * 60_000)
     expect(LONG_CALL_MS).toBe(20 * 60_000)

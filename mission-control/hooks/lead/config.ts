@@ -6,7 +6,7 @@ export type LeadConfig = {
   sessionBudget: number | null
   runBudget: number | null
   agentBudget: number | null
-  /** Fable calls allowed per session. */
+  /** Fable calls allowed per session; 0 forbids Fable. */
   fableCap: number
 }
 
@@ -17,10 +17,18 @@ export const LONG_CALL_MS = 20 * 60_000
 
 const DEFAULT_FABLE_CAP = 3
 
+// Digits only after trim: no sign, hex, exponent or fraction; the result must be a safe integer.
+function digitsInt(v: unknown): number | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  if (!/^\d+$/.test(s)) return null
+  const n = Number(s)
+  return Number.isSafeInteger(n) ? n : null
+}
+
 function positiveInt(v: unknown): number | null {
-  if (typeof v !== 'string' || v.trim() === '') return null
-  const n = Number(v)
-  return Number.isInteger(n) && n > 0 ? n : null
+  const n = digitsInt(v)
+  return n !== null && n > 0 ? n : null
 }
 
 function optionsOf(options: unknown): Record<string, unknown> {
@@ -34,6 +42,6 @@ export function leadConfigOf(options: unknown): LeadConfig {
     sessionBudget: positiveInt(o.sessionBudgetOE),
     runBudget: positiveInt(o.runBudgetOE),
     agentBudget: positiveInt(o.agentBudgetOE),
-    fableCap: positiveInt(o.fableCap) ?? DEFAULT_FABLE_CAP,
+    fableCap: digitsInt(o.fableCap) ?? DEFAULT_FABLE_CAP,
   }
 }
