@@ -228,7 +228,8 @@ export function registerMemory(
     // The person's own prompt carries what changed for the lead since the last digest (spec 6.6); a plugin's
     // wake prompt does not take it. A throw leaves the prompt as it was.
     let input = e
-    if (e.origin.kind === 'composer' || e.origin.kind === 'bridge') {
+    // A slash command is not a message to the lead: it leaves the digest for the next one.
+    if (e.command === undefined && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) {
       try {
         const out: { text: string | null } = { text: null }
         await update($, leadA, cur => {
@@ -242,7 +243,7 @@ export function registerMemory(
           await update($, leadA, cur =>
             cur.flags.includes('guard-error')
               ? cur
-              : { ...pushNews(cur, `сводка упала: ${err instanceof Error ? err.message : String(err)}`), flags: [...cur.flags, 'guard-error'] },
+              : { ...pushNews(cur, `сводка упала: ${reason(err)}`), flags: [...cur.flags, 'guard-error'] },
           )
         } catch {
           // nothing more to do

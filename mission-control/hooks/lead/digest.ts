@@ -18,15 +18,17 @@ const LINE_100 = 'бюджет сессии исчерпан'
 
 const oe = (n: number): string => String(Math.round(n))
 
+/** At most LINE_MAX characters, counted by code points so a surrogate pair is never split. */
 function clip(line: string): string {
-  return line.length <= LINE_MAX ? line : `${line.slice(0, LINE_MAX - 1)}…`
+  const chars = Array.from(line)
+  return chars.length <= LINE_MAX ? line : `${chars.slice(0, LINE_MAX - 1).join('')}…`
 }
 
 /** Identical lines in one, «×N», in the order they first appeared. */
 function merged(news: readonly string[]): string[] {
   const counts = new Map<string, number>()
   for (const line of news) counts.set(line, (counts.get(line) ?? 0) + 1)
-  return [...counts].map(([line, n]) => clip(n > 1 ? `${line} ×${n}` : line))
+  return [...counts].map(([line, n]) => (n > 1 ? `${clip(line)} ×${n}` : clip(line)))
 }
 
 /** The budget and solo lines that are due, in the order the lead must read them. */

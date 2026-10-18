@@ -36,6 +36,16 @@ describe('digestOf', () => {
     expect(huge.length).toBeLessThanOrEqual(DIGEST_MAX)
   })
 
+  test('a merged line longer than the cap keeps its count, and the clip never splits a character', () => {
+    const long = 'я'.repeat(300)
+    const text = digestOf(lead({ news: [long, long, long] }), cfg()) ?? ''
+    expect(text.endsWith(' ×3')).toBe(true)
+    const emoji = '😀'.repeat(300)
+    const cut = digestOf(lead({ news: [emoji] }), cfg()) ?? ''
+    expect(cut).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/)
+    expect(cut.length).toBeLessThanOrEqual(DIGEST_MAX)
+  })
+
   test('the cut is on a line boundary and counts what is left', () => {
     const news = Array.from({ length: 30 }, (_, i) => `строка номер ${String(i).padStart(2, '0')} ${'x'.repeat(40)}`)
     const text = digestOf(lead({ news }), cfg()) ?? ''
@@ -160,6 +170,17 @@ describe('the digest in the engine', () => {
     // delivered once: the next batch has nothing
     const batch = await $.classic.PostToolBatch({ tool_calls: [] })
     expect(batch.additionalContext).toBeUndefined()
+  })
+
+  test('a slash command leaves the digest for the lead', async ($, on) => {
+    const engine = engineBeneath(on)
+    await $.session.start(SESSION)
+    await $.turn.start({ text: 'go', turnId: 't1' })
+    await spawn($, { subagentType: 'coder', description: 'форк', fork: true })
+    await $.prompt.submit({ text: '/mc budget', wait: false, origin: { kind: 'composer' }, command: { name: 'mc', args: 'budget' } } as never)
+    expect(engine.contexts.at(-1)).toEqual([])
+    const batch = await $.classic.PostToolBatch({ tool_calls: [] })
+    expect(batch.additionalContext?.join('\n')).toContain('форк')
   })
 
   test('a prompt without news carries no context', async ($, on) => {
