@@ -28,6 +28,28 @@ describe('lead price', () => {
     expect(isFable('claude-opus-5-5')).toBe(false)
     expect(isFable(null)).toBe(false)
   })
+  test('same family with another version is priced as fable and flagged', () => {
+    expect(oeOf({ model: 'claude-haiku-4-5', input_tokens: 100 })).toEqual({ oe: 250, unknown: true })
+    expect(oeOf({ model: 'claude-opus-6', input_tokens: 100 })).toEqual({ oe: 250, unknown: true })
+  })
+  test('provider prefix, date and suffix keep a known id known', () =>
+    expect(oeOf({ model: 'us.anthropic.claude-sonnet-5-5-20261001-v1:0', output_tokens: 100 })).toEqual({
+      oe: 250,
+      unknown: false,
+    }))
+  test('known fable id is priced as fable and not flagged', () =>
+    expect(oeOf({ model: 'claude-fable-5-1', output_tokens: 100 })).toEqual({ oe: 1250, unknown: false }))
+  test('model id is matched case-insensitively', () =>
+    expect(oeOf({ model: 'Claude-Opus-5-5', input_tokens: 1000 })).toEqual({ oe: 1000, unknown: false }))
+  test('NaN, negative and non-finite counts are zero', () => {
+    expect(oeOf({ model: 'claude-opus-5-5', input_tokens: NaN, output_tokens: -5 })).toEqual({
+      oe: 0,
+      unknown: false,
+    })
+    expect(oeOf({ model: 'claude-opus-5-5', input_tokens: Infinity, cache_read_input_tokens: 1000 }).oe).toBe(50)
+  })
+  test('counts without a model are priced as fable and flagged', () =>
+    expect(oeOf({ input_tokens: 100 })).toEqual({ oe: 250, unknown: true }))
   test('a known model with cache reads is not flagged', () =>
     expect(oeOf({ model: 'claude-opus-5-5[1m]', cache_read_input_tokens: 1000 })).toEqual({
       oe: 50,
