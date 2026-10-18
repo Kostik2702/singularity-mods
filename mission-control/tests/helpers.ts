@@ -95,6 +95,10 @@ export function engineBeneath(
   opts: {
     spawns?: SpawnAnswer[]
     failCommandRegister?: boolean
+    /** The engine refuses every prompt.submit (a settings hook's block). */
+    refuseSubmit?: boolean
+    /** While `down` is true every clock read throws (no clock handle is returned then). */
+    brokenClock?: { down: boolean }
     bash?: (input: Record<string, unknown>) => BashAnswer | Promise<BashAnswer>
     /** Tabs already open when the module (re)loads, by id and title. */
     panes?: { id: string; title: string }[]
@@ -102,7 +106,14 @@ export function engineBeneath(
     env?: Record<string, string>
   } = {},
 ) {
-  const clock = mock.clock(on, { now: T0 })
+  const broken = opts.brokenClock
+  if (broken !== undefined) {
+    on('clock.now', () => {
+      if (broken.down) throw new Error('clock down')
+      return { value: T0 }
+    })
+  }
+  const clock = broken === undefined ? mock.clock(on, { now: T0 }) : (undefined as never)
   mock.env(on, opts.env ?? {})
   // session.start and what it calls: the kit has no bottom for these.
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -116,7 +127,7 @@ export function engineBeneath(
   const spawns: SpawnAnswer[] = [...(opts.spawns ?? ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'])]
   const texts: string[] = []
   let listed: AgentInfo[] = []
-  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('prompt.submit', (_$, e) => (opts.refuseSubmit === true ? { drop: 'blocked' } : { text: e.text }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer, usage: e.usage }))
   /** What reached the engine beneath the plugin: the spawn inputs after every hook above it. */

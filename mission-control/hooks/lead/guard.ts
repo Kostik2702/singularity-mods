@@ -17,7 +17,8 @@ export type SpawnFacts = {
 }
 
 export type SpawnDecision =
-  | { kind: 'pass' }
+  /** `countsAsFable`: the spawn runs on Fable (explicitly or as a bare advisor), so it uses one of the cap's calls. */
+  | { kind: 'pass'; countsAsFable?: true }
   | { kind: 'rewrite'; model: string; note: string }
   | { kind: 'deny'; reason: string }
   | { kind: 'note'; note: string }
@@ -32,18 +33,25 @@ export const FABLE_REASON_MARKER = 'ПОЧЕМУ FABLE:'
 const DENY_COUNCIL = 'Council запускается только командой владельца — попроси его'
 const DENY_BUDGET = 'бюджет исчерпан — остановись и спроси владельца'
 
-const isCouncilPrompt = (prompt: string): boolean => COUNCIL_MARKERS.some((m) => prompt.includes(m))
+// A marker counts only at the start of a line (indentation allowed): prose that merely mentions one is not a mission.
+const atLineStart = (marker: string): RegExp => new RegExp(`^[ \\t]*${marker}`, 'm')
+const COUNCIL_PATTERNS: readonly RegExp[] = COUNCIL_MARKERS.map(atLineStart)
+// A non-empty text must follow the reason marker on its own line.
+const FABLE_REASON: RegExp = new RegExp(`^[ \\t]*${FABLE_REASON_MARKER}[ \\t]*\\S`, 'm')
 
-// A non-empty text must follow the marker on its own line.
-const hasFableReason = (prompt: string): boolean => new RegExp(`${FABLE_REASON_MARKER}[ \\t]*\\S`).test(prompt)
+const isCouncilPrompt = (prompt: string): boolean => COUNCIL_PATTERNS.some((p) => p.test(prompt))
+const hasFableReason = (prompt: string): boolean => FABLE_REASON.test(prompt)
 
 /**
  * Order: council, Fable, budget, fork. A deny of any step wins over a rewrite of an earlier one.
  * A fork or a resume is never rewritten: the engine ignores a fork's model and a resume keeps its own.
+ * The council check also runs on workflow spawns (a superset of spec 6.7, which leaves them to the rubric).
+ * An advisor with no model is Fable: its own definition names the model, so the guard treats it as asked for.
  */
 export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecision {
   const rewritable = !f.fork && !f.isResume
   let rewrite: { model: string; note: string } | null = null
+  let countsAsFable = false
 
   if (isCouncilPrompt(f.prompt)) {
     if (l.councilTurn === null) return { kind: 'deny', reason: DENY_COUNCIL }
@@ -52,7 +60,8 @@ export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecisio
     }
   }
 
-  if (rewrite === null && rewritable && isFable(f.model)) {
+  const isFableSpawn = isFable(f.model) || (f.subagentType === 'advisor' && (f.model === undefined || f.model === ''))
+  if (rewrite === null && rewritable && isFableSpawn) {
     if (f.isWorkflow) {
       rewrite = { model: 'opus', note: 'Fable в workflow → opus' }
     } else if (f.subagentType !== 'advisor') {
@@ -61,6 +70,8 @@ export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecisio
       return { kind: 'deny', reason: `нет строки ${FABLE_REASON_MARKER}` }
     } else if (l.fableCalls >= c.fableCap) {
       return { kind: 'deny', reason: `лимит вызовов Fable исчерпан (${l.fableCalls}/${c.fableCap})` }
+    } else {
+      countsAsFable = true
     }
   }
 
@@ -70,5 +81,5 @@ export function decideSpawn(f: SpawnFacts, l: Lead, c: LeadConfig): SpawnDecisio
 
   if (rewrite !== null) return { kind: 'rewrite', ...rewrite }
   if (f.fork) return { kind: 'note', note: 'форк · модель лида' }
-  return { kind: 'pass' }
+  return countsAsFable ? { kind: 'pass', countsAsFable: true } : { kind: 'pass' }
 }

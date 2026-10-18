@@ -90,3 +90,42 @@ test('a guard that throws lets the spawn through and says so once', async ($, on
   }
   expect(engine.reached).toHaveLength(2)
 })
+
+test('a bare advisor with a reason counts toward the cap, a fourth is denied', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'вопрос')
+  for (let i = 0; i < 3; i += 1) {
+    expect((await spawn($, { subagentType: 'advisor', description: `совет ${i}`, prompt: WHY })).deny).toBeUndefined()
+  }
+  expect((await spawn($, { subagentType: 'advisor', description: 'совет 4', prompt: WHY })).deny).toContain('3/3')
+  expect(engine.reached).toHaveLength(3)
+})
+
+test('an advisor on an explicit sonnet and one rewritten to opus do not use the cap', async ($, on) => {
+  engineBeneath(on)
+  await submit($, 'вопрос')
+  for (let i = 0; i < 2; i += 1) await spawn($, { subagentType: 'advisor', description: 'дешёвый', model: 'sonnet', prompt: 'Вопрос?' })
+  for (let i = 0; i < 2; i += 1) await spawn($, { subagentType: 'advisor', description: 'в workflow', prompt: 'Вопрос?', workflow: 'wf_1' })
+  for (let i = 0; i < 3; i += 1) {
+    expect((await spawn($, { subagentType: 'advisor', description: `совет ${i}`, prompt: WHY })).deny).toBeUndefined()
+  }
+})
+
+test('a deny stays a deny when the bookkeeping after it throws', async ($, on) => {
+  const brokenClock = { down: false }
+  const engine = engineBeneath(on, { brokenClock })
+  await submit($, 'прогон')
+  // Every later clock read fails: the row of the refusal cannot be written.
+  brokenClock.down = true
+  const res = await spawn($, { subagentType: 'coder', description: 'шаг', model: 'fable' })
+  expect(res.deny).toBe('Fable только через advisor')
+  expect(engine.reached).toHaveLength(0)
+})
+
+test('a refused /council submit does not open the window', async ($, on) => {
+  const engine = engineBeneath(on, { refuseSubmit: true })
+  await submitCommand($, 'council')
+  const res = await spawn($, { subagentType: 'critic', description: 'член', prompt: 'COUNCIL MISSION: оцени' })
+  expect(res.deny).toBe(DENIED_COUNCIL)
+  expect(engine.reached).toHaveLength(0)
+})

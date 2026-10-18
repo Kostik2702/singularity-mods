@@ -60,12 +60,12 @@ describe('spawn guard', () => {
         reason: 'нет строки ПОЧЕМУ FABLE:',
       })
     }
-    expect(decideSpawn(facts({ model: 'fable', subagentType: 'advisor', prompt: WHY }), lead(), cfg())).toEqual({ kind: 'pass' })
+    expect(decideSpawn(facts({ model: 'fable', subagentType: 'advisor', prompt: WHY }), lead(), cfg())).toEqual({ kind: 'pass', countsAsFable: true })
   })
 
   test('fourth advisor over cap 3 is denied', () => {
     const f = facts({ model: 'fable', subagentType: 'advisor', prompt: WHY })
-    expect(decideSpawn(f, lead({ fableCalls: 2 }), cfg())).toEqual({ kind: 'pass' })
+    expect(decideSpawn(f, lead({ fableCalls: 2 }), cfg())).toEqual({ kind: 'pass', countsAsFable: true })
     expect(decideSpawn(f, lead({ fableCalls: 3 }), cfg())).toMatchObject({ kind: 'deny', reason: expect.stringContaining('3/3') })
   })
 
@@ -119,5 +119,51 @@ describe('spawn guard', () => {
   test('a budget deny beats a rewrite', () => {
     const c = cfg({ mode: 'enforce', sessionBudget: 1 })
     expect(decideSpawn(facts({ model: 'fable', isWorkflow: true }), lead({ session: 5 }), c)).toMatchObject({ kind: 'deny' })
+  })
+
+  describe('a bare advisor is Fable (R15)', () => {
+    const bare = (o: Partial<SpawnFacts> = {}) => facts({ subagentType: 'advisor', ...o })
+    test('without the reason line it is denied', () => {
+      expect(decideSpawn(bare({ prompt: 'Вопрос?' }), lead(), cfg())).toMatchObject({ kind: 'deny', reason: 'нет строки ПОЧЕМУ FABLE:' })
+      expect(decideSpawn(bare({ prompt: 'Вопрос?', model: '' }), lead(), cfg())).toMatchObject({ kind: 'deny' })
+    })
+    test('the fourth over cap 3 is denied', () => {
+      expect(decideSpawn(bare({ prompt: WHY }), lead({ fableCalls: 3 }), cfg())).toMatchObject({ kind: 'deny' })
+    })
+    test('in a workflow it becomes opus and is not counted', () => {
+      const d = decideSpawn(bare({ prompt: 'Вопрос?', isWorkflow: true, runId: 'wf_1' }), lead(), cfg())
+      expect(d).toMatchObject({ kind: 'rewrite', model: 'opus' })
+      expect(d).not.toHaveProperty('countsAsFable')
+    })
+    test('with an explicit model sonnet it passes and is not counted', () => {
+      const d = decideSpawn(bare({ prompt: 'Вопрос?', model: 'sonnet' }), lead(), cfg())
+      expect(d).toEqual({ kind: 'pass' })
+    })
+    test('justified, it passes and counts once', () => {
+      expect(decideSpawn(bare({ prompt: WHY }), lead(), cfg())).toEqual({ kind: 'pass', countsAsFable: true })
+      expect(decideSpawn(bare({ prompt: WHY, model: 'fable' }), lead(), cfg())).toEqual({ kind: 'pass', countsAsFable: true })
+    })
+    test('a fork or a resume is never counted', () => {
+      expect(decideSpawn(bare({ prompt: WHY, fork: true }), lead(), cfg())).not.toHaveProperty('countsAsFable')
+      expect(decideSpawn(bare({ prompt: WHY, isResume: true }), lead(), cfg())).not.toHaveProperty('countsAsFable')
+    })
+  })
+
+  describe('markers count at the start of a line (R16)', () => {
+    test('a council marker mid-line in prose is not a council', () => {
+      const prompt = 'Объясни, что значит COUNCIL MISSION в промпте, и не запускай совет.'
+      expect(decideSpawn(facts({ prompt }), lead(), cfg())).toEqual({ kind: 'pass' })
+    })
+    test('at the line start, or after indentation, it is denied', () => {
+      expect(decideSpawn(facts({ prompt: 'Вступление\nSRE MISSION: оцени' }), lead(), cfg())).toMatchObject({ kind: 'deny' })
+      expect(decideSpawn(facts({ prompt: 'Вступление\n  \tPLANNING MISSION: план' }), lead(), cfg())).toMatchObject({ kind: 'deny' })
+    })
+    test('a reason mentioned mid-line is not a justification', () => {
+      const prompt = 'Нужна строка ПОЧЕМУ FABLE: потом допишу'
+      expect(decideSpawn(facts({ model: 'fable', subagentType: 'advisor', prompt }), lead(), cfg())).toMatchObject({
+        kind: 'deny',
+        reason: 'нет строки ПОЧЕМУ FABLE:',
+      })
+    })
   })
 })

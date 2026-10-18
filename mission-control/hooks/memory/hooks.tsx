@@ -216,10 +216,14 @@ export function registerMemory(on: On, theme: Theme, sealFile: string | null = n
   const pal = theme.colors
   on('prompt.submit', async ($, e, next) => {
     await update($, turnA, n => n + 1)
-    // A council command opens the council window; main's turn.complete closes it (register.tsx).
+    const res = await next(e)
+    // A council command opens the window once its prompt has entered (a refused one opens nothing);
+    // main's turn.complete closes it (register.tsx).
     const command = e.command?.name
-    if (command !== undefined && COUNCIL_COMMANDS.includes(command)) await update($, leadA, l => ({ ...l, councilTurn: command }))
-    return next(e)
+    if (res.drop === undefined && command !== undefined && COUNCIL_COMMANDS.includes(command)) {
+      await update($, leadA, l => ({ ...l, councilTurn: command }))
+    }
+    return res
   }).catch(($, e, next) => next(e))
 
   // Every text the engine injects for the model, raised on every request that carries it

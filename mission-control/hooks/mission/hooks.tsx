@@ -5,6 +5,7 @@ import type { Action, CurrentAction } from '../../types'
 import { runningShown } from '../jobs/model'
 import type { LeadConfig } from '../lead/config'
 import { decideSpawn } from '../lead/guard'
+import type { SpawnDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
@@ -106,13 +107,17 @@ export function registerMission(
   }).catch(($, e, next) => next(e))
 
   // The spawn guard (spec 6.3): deny before `next`, or rewrite the model on the way in. A guard that
-  // throws lets the spawn through unchanged and says so once in the lead's news.
+  // throws lets the spawn through unchanged and says so once in the lead's news. Once it has decided
+  // a deny, nothing after that may turn the deny into a spawn: bookkeeping failures are swallowed
+  // and the .catch repeats the deny.
+  const decidedDenies = new Map<string, string>()
   on('agent.spawn', async ($, e, next) => {
     let input = e
     let denied: string | null = null
+    let countsAsFable = false
+    let decision: SpawnDecision | null = null
     try {
-      const l = await read($, leadA)
-      const d = decideSpawn(
+      decision = decideSpawn(
         {
           prompt: e.prompt,
           subagentType: e.subagentType,
@@ -122,21 +127,23 @@ export function registerMission(
           runId: e.workflow?.runId || null,
           ...(e.model === undefined ? {} : { model: e.model }),
         },
-        l,
+        await read($, leadA),
         lead,
       )
-      if (d.kind === 'deny') {
-        denied = d.reason
-        await update($, leadA, cur => ({ ...pushNews(cur, `отказ в спавне: ${d.reason}`), denials: cur.denials + 1 }))
-      } else if (d.kind === 'rewrite') {
-        input = { ...e, model: d.model }
-        await update($, leadA, cur => ({ ...pushNews(cur, d.note), rewrites: cur.rewrites + 1 }))
-      } else if (d.kind === 'note') {
-        await update($, leadA, cur => pushNews(cur, d.note))
+      if (decision.kind === 'deny') {
+        // Decided first: the news below may fail, the deny stands.
+        denied = decision.reason
+        decidedDenies.set(e.tool_use_id, decision.reason)
+      } else if (decision.kind === 'rewrite') {
+        input = { ...e, model: decision.model }
+      } else if (decision.kind === 'pass') {
+        countsAsFable = decision.countsAsFable === true
       }
     } catch (err) {
       input = e
       denied = null
+      countsAsFable = false
+      decision = null
       try {
         await update($, leadA, cur =>
           cur.flags.includes('guard-error')
@@ -147,36 +154,58 @@ export function registerMission(
         // nothing more to do: the spawn goes through
       }
     }
+    try {
+      if (decision?.kind === 'deny') {
+        const why = decision.reason
+        await update($, leadA, cur => ({ ...pushNews(cur, `отказ в спавне: ${why}`), denials: cur.denials + 1 }))
+      } else if (decision?.kind === 'rewrite') {
+        const note = decision.note
+        await update($, leadA, cur => ({ ...pushNews(cur, note), rewrites: cur.rewrites + 1 }))
+      } else if (decision?.kind === 'note') {
+        const note = decision.note
+        await update($, leadA, cur => pushNews(cur, note))
+      }
+    } catch {
+      // the news is lost, the decision is not
+    }
     const res = denied !== null ? { deny: denied } : await next(input)
-    if (res.deny === undefined && e.subagentType === 'advisor' && input === e) {
+    if (res.deny === undefined && countsAsFable) {
       try {
         await update($, leadA, cur => ({ ...cur, fableCalls: cur.fableCalls + 1 }))
       } catch {
         // the count is lost, the spawn is not
       }
     }
-    const now = await $.clock.now()
-    const turn = await read($, turnA)
-    await update($, agentsA, rows =>
-      applySpawn(rows, {
-        agentId: res.agentId ?? null,
-        deny: res.deny ?? null,
-        toolUseId: e.tool_use_id,
-        parentAgentId: e.parentAgentId ?? null,
-        subagentType: e.subagentType,
-        description: e.description,
-        prompt: e.prompt,
-        model: res.model ?? e.model ?? null,
-        name: e.name ?? null,
-        isBackground: e.background,
-        isTeammate: e.isTeammate === true,
-        workflowRunId: e.workflow?.runId ?? null,
-        turn,
-        now,
-      }),
-    )
+    // The row of the spawn (a refused one too). A failure here must not undo the spawn or the deny.
+    try {
+      const now = await $.clock.now()
+      const turn = await read($, turnA)
+      await update($, agentsA, rows =>
+        applySpawn(rows, {
+          agentId: res.agentId ?? null,
+          deny: res.deny ?? null,
+          toolUseId: e.tool_use_id,
+          parentAgentId: e.parentAgentId ?? null,
+          subagentType: e.subagentType,
+          description: e.description,
+          prompt: e.prompt,
+          model: res.model ?? e.model ?? null,
+          name: e.name ?? null,
+          isBackground: e.background,
+          isTeammate: e.isTeammate === true,
+          workflowRunId: e.workflow?.runId ?? null,
+          turn,
+          now,
+        }),
+      )
+    } catch {
+      // unobserved
+    }
     return res
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    const deny = decidedDenies.get(e.tool_use_id)
+    return next.called || deny === undefined ? next(e) : { deny }
+  })
 
   // The Agents tab: drawn by pane.tsx from the rows and the feed.
   on('ui.render', { component: 'Pane', requestId: AGENTS_PANE }, async ($, e) => {
