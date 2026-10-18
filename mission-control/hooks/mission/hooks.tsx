@@ -9,7 +9,7 @@ import { decideSpawn, decideStep } from '../lead/guard'
 import type { SpawnDecision, StepDecision } from '../lead/guard'
 import { EMPTY_LEAD, pushNews } from '../lead/ledger'
 import { isFable } from '../lead/price'
-import { TEAM_TOOL } from '../lead/team'
+import { TEAM_TOOL, sessionLimit } from '../lead/team'
 import { describeAction, launchedVerb } from '../lib/actions'
 import { drawsPictures, listPortraits, loadPixmap } from '../lib/terminal'
 import type { Pixmap } from '../lib/pixmap'
@@ -339,7 +339,9 @@ export function registerMission(
         if (pix !== null) portraitPix[slug] = pix
       }
     }
+    const ledger = await read($, leadA)
     const data = {
+      lead: { mode: lead.mode, session: ledger.session, limit: sessionLimit(ledger, lead), halted: ledger.halted },
       agents: await read($, agentsA),
       actions: await read($, actionsA),
       turn: await read($, turnA),

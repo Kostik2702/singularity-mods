@@ -34,7 +34,11 @@ const PHASE_WORDS: Readonly<Record<AgentPhase, string>> = {
   denied: 'отклонён',
 }
 
-const int = (n: number): string => String(Math.round(n))
+/** A whole number of OE, as the table writes it. */
+export const int = (n: number): string => String(Math.round(n))
+
+/** The same, thousands set apart by a plain space: «1 000» (header of the Agents tab). */
+export const grouped = (n: number): string => int(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 
 /** The mode, as the Agents tab names it. */
 const modeWord = (c: LeadConfig): string => (c.mode === 'enforce' ? 'контроль' : 'наблюдение')

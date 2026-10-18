@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { feedLabelWidth, wrapTwo } from '../hooks/mission/pane'
+import { screen } from './paint'
 import { complete, engineBeneath, mountAgents, runCommand, spawn, step, submit, toolCall } from './helpers'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -195,3 +196,128 @@ test('/mc clear drops ended agents and earlier feed; /mc with an unknown word ex
   expect(await runCommand($, 'mc', 'foo')).toMatch(/не знаю «foo»/)
   expect(await runCommand($, 'mc', '')).toMatch(/открыта/)
 })
+
+// ── Team lead on the Agents tab (spec 6.6): tier, effort, OE and the budget ──
+
+const SONNET = 'claude-sonnet-5-5'
+const THEMES = [
+  ['classic', {}],
+  ['warhammer', { theme: 'warhammer' }],
+] as const
+// 600 input tokens on sonnet: 600 x 2 / 4 = 300 OE.
+const SPENT_300 = { model: SONNET, input_tokens: 600, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+// 1000 input + 400 output on sonnet: 1500 OE.
+const SPENT_1500 = { model: SONNET, input_tokens: 1000, output_tokens: 400, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+
+test('a working sonnet row shows tier, effort and OE, on every surface', async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'go')
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await spawn($, { subagentType: 'coder', description: 'парсер', model: 'sonnet' })
+  engine.stepAnswer({ usage: SPENT_1500 })
+  await step($, 'a1', { model: SONNET, effort: 'medium' })
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /sonnet · medium · 1500 OE/ })).toBeDefined()
+    expect(await ui.find({ text: /null|undefined/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('a row with nothing known keeps its old line', async ($, on) => {
+  engineBeneath(on)
+  await spawn($, { subagentType: 'investigator', description: 'корень' })
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /investigator · 0с$/ })).toBeDefined()
+    expect(await ui.find({ text: /OE/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the header names the observe mode', async ($, on) => {
+  engineBeneath(on)
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /наблюдение/ })).toBeDefined()
+    expect(await ui.find({ text: /контроль/ })).toBeUndefined()
+    expect(await ui.find({ text: /ЗАМОРОЖЕНО/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the header shows the enforce mode and spent/limit', { options: { budgetMode: 'enforce', sessionBudgetOE: '1000' } }, async ($, on) => {
+  const engine = engineBeneath(on)
+  await submit($, 'go')
+  engine.stepAnswer({ usage: SPENT_300 })
+  await step($, undefined, { model: SONNET })
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /контроль · 300\/1 000 OE/ })).toBeDefined()
+    await ui.unmount()
+  }
+  // The owner adds to the limit: the header follows.
+  await runCommand($, 'mc', 'budget +500')
+  const ui = await mountAgents($, 'terminal')
+  expect(await ui.find({ text: /контроль · 300\/1 500 OE/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the halt is shown in observe and in enforce', async ($, on) => {
+  engineBeneath(on)
+  await spawn($, { subagentType: 'coder', description: 'шаг', model: 'sonnet' })
+  await runCommand($, 'mc', 'halt')
+  for (const surface of SURFACES) {
+    const ui = await mountAgents($, surface)
+    expect(await ui.find({ text: /наблюдение · ЗАМОРОЖЕНО/ })).toBeDefined()
+    await ui.unmount()
+  }
+  await runCommand($, 'mc', 'resume')
+  const ui = await mountAgents($, 'terminal')
+  expect(await ui.find({ text: /ЗАМОРОЖЕНО/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('enforce shows the halt after the budget', { options: { budgetMode: 'enforce', sessionBudgetOE: '1000' } }, async ($, on) => {
+  engineBeneath(on)
+  await runCommand($, 'mc', 'halt')
+  const ui = await mountAgents($, 'desktop')
+  expect(await ui.find({ text: /контроль · 0\/1 000 OE · ЗАМОРОЖЕНО/ })).toBeDefined()
+  await ui.unmount()
+})
+
+for (const [name, options] of THEMES) {
+  test(`${name} theme: card facts and header on every surface`, { options: { ...options, budgetMode: 'enforce', sessionBudgetOE: '1000' } }, async ($, on) => {
+    const engine = engineBeneath(on)
+    await submit($, 'go')
+    await $.turn.start({ text: 'go', turnId: 't1' })
+    await spawn($, { subagentType: 'coder', description: 'парсер', model: 'sonnet' })
+    engine.stepAnswer({ usage: SPENT_300 })
+    await step($, 'a1', { model: SONNET, effort: 'medium' })
+    await runCommand($, 'mc', 'halt')
+    for (const surface of SURFACES) {
+      const ui = await mountAgents($, surface)
+      expect(await ui.find({ text: /sonnet · medium · 300 OE/ })).toBeDefined()
+      expect(await ui.find({ text: /контроль · 300\/1 000 OE · ЗАМОРОЖЕНО/ })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+
+  test(`${name} theme: a narrow dock keeps its width`, { options: { ...options, budgetMode: 'enforce', sessionBudgetOE: '1000000' } }, async ($, on) => {
+    const engine = engineBeneath(on)
+    await submit($, 'go')
+    await spawn($, { subagentType: 'coder', description: 'парсер', model: 'sonnet' })
+    engine.stepAnswer({ usage: SPENT_1500 })
+    await step($, 'a1', { model: SONNET, effort: 'medium' })
+    await runCommand($, 'mc', 'halt')
+    for (const cols of [30, 40]) {
+      const ui = await mountAgents($, 'terminal', { cols, rows: 20 })
+      const lines = screen(await ui.drawn()).split('\n')
+      // The painter does not clip a Text, so only the rows this feature adds are measured.
+      const header = lines.filter(l => l.includes('контроль'))
+      expect(header).toHaveLength(1)
+      expect([...(header[0] ?? '').trim()].length).toBeLessThanOrEqual(cols - 2)
+      await ui.unmount()
+    }
+  })
+}

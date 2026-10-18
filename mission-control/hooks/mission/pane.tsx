@@ -2,6 +2,8 @@ import type { ElementTable } from 'claude-code'
 
 import type { Action, AgentPhase, AgentRow } from '../../types'
 import { COG, PORTRAIT, cells, isWarped, slateKit, stamp } from '../lib/frame'
+import { grouped, int } from '../lead/team'
+import { tierOf } from '../lead/price'
 import { fmtTokens } from '../lib/parse'
 import { thoughtFor } from '../lib/thoughts'
 import type { Pixmap } from '../lib/pixmap'
@@ -35,6 +37,28 @@ export type AgentsPaneData = {
   /** Where the terminal draws no pictures: the chosen crest's pixmap and the portraits' pixmaps, by slug. */
   crestPix?: Pixmap | null
   portraitPix?: Record<string, Pixmap>
+  /** The team-lead layer's state for the header; absent draws no header line. `limit` is null without a session budget. */
+  lead?: { mode: 'observe' | 'enforce'; session: number; limit: number | null; halted: boolean }
+}
+
+/** The header's words: «контроль · 300/1 000 OE», then «ЗАМОРОЖЕНО» when the owner halted the executors. */
+export function leadHeader(lead: NonNullable<AgentsPaneData['lead']>): { text: string; halted: boolean } {
+  const parts: string[] = [lead.mode === 'enforce' ? 'контроль' : 'наблюдение']
+  if (lead.limit !== null) parts.push(`${grouped(lead.session)}/${grouped(lead.limit)} OE`)
+  if (lead.halted) parts.push('ЗАМОРОЖЕНО')
+  return { text: parts.join(' · '), halted: lead.halted }
+}
+
+/** The header line, one row cut at the column; null without lead data. */
+function leadRow(table: ElementTable, t: Theme, d: AgentsPaneData, width: number) {
+  if (d.lead === undefined) return null
+  const { Text } = table
+  const { text, halted } = leadHeader(d.lead)
+  return (
+    <Text color={halted ? t.colors.critical : t.colors.ink2} bold={halted} wrap="truncate-end">
+      {clip(text, width)}
+    </Text>
+  )
 }
 
 type Mark = { icon: string; color: string; label: string }
@@ -167,6 +191,9 @@ function agentFacts(row: AgentRow, d: AgentsPaneData, t: Theme): { mark: Mark; s
   if (silent) said.push(`${w.silent} ${fmtDur(d.now - row.lastEventAt)}`)
   else if (row.phase === 'failed' || row.phase === 'aborted' || row.phase === 'waiting' || row.phase === 'idle') said.push(mark.label)
   if (isEnded(row.phase) && row.tokens > 0) said.push(`${fmtTokens(row.tokens)} ток.`)
+  // Tier, effort and OE (spec 6.6): a part that is not known yet is left out, never written as «null».
+  const facts = [tierOf(row.model), row.effort, row.oe > 0 ? `${int(row.oe)} OE` : null].filter((p): p is string => p !== null && p !== '')
+  if (facts.length > 0) said.push(facts.join(' · '))
   return { mark, said }
 }
 
@@ -353,7 +380,8 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
 
   // ── Feed: the newest calls of every loop, as many as the tab has room for ──
   const jobs = d.jobsRunning ?? 0
-  const used = out.length + (tree.hidden > 0 ? 1 : 0) + (jobs > 0 ? 2 : 0) + (banner === null ? 0 : 2)
+  const head = leadRow(table, t, d, inner)
+  const used = out.length + (tree.hidden > 0 ? 1 : 0) + (jobs > 0 ? 2 : 0) + (banner === null ? 0 : 2) + (head === null ? 0 : 1)
   const room = Math.max(FEED_MIN, rows - used - 6)
   const recent = feedRows(table, t, d, room, inner)
   const feed =
@@ -373,6 +401,7 @@ export function drawAgentsPane(table: ElementTable, d: AgentsPaneData, cols: num
           </Text>
         </Box>
       )}
+      {head}
       {out}
       {tree.hidden > 0 && <Text color={c.muted}>{hiddenText(tree.hidden)}</Text>}
       {jobs > 0 && (
@@ -478,6 +507,9 @@ function drawAgentsSlate(table: ElementTable, d: AgentsPaneData, cols: number, r
     }
     out.push(kit.strip(slate.strip.agents, `ход ${d.turn} · в строю ${inLine}`, inner))
   }
+  // Mode and budget on a row of their own: the strip is a fixed width, and this text is not.
+  const head = leadRow(table, t, d, inner)
+  if (head !== null) out.push(head)
 
   for (const { row, lead, indent } of tree.lines) {
     const isMain = row.id === MAIN
