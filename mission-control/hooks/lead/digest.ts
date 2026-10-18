@@ -4,6 +4,7 @@
 import type { Lead } from '../../types'
 import type { LeadConfig } from './config'
 import { budgetLeft } from './ledger'
+import { mergedRoutine } from './news'
 
 /** The whole digest, in characters. */
 export const DIGEST_MAX = 600
@@ -24,10 +25,13 @@ function clip(line: string): string {
   return chars.length <= LINE_MAX ? line : `${chars.slice(0, LINE_MAX - 1).join('')}…`
 }
 
-/** Identical lines in one, «×N», in the order they first appeared. */
+/**
+ * Lines of one type in one: all the starts, all the ends (news.ts), then identical lines, «×N»,
+ * in the order they first appeared.
+ */
 export function mergedNews(news: readonly string[]): string[] {
   const counts = new Map<string, number>()
-  for (const line of news) counts.set(line, (counts.get(line) ?? 0) + 1)
+  for (const line of mergedRoutine(news)) counts.set(line, (counts.get(line) ?? 0) + 1)
   return [...counts].map(([line, n]) => (n > 1 ? `${clip(line)} ×${n}` : clip(line)))
 }
 

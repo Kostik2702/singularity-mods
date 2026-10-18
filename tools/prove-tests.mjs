@@ -50,10 +50,15 @@ const MUTANTS = [
   // The digest says who started and who finished; a row from before 0.4.0 has no oe.
   { name: 'lead-start-line-dropped', file: 'hooks/mission/hooks.tsx', from: 'if (res.deny === undefined && e.isTeammate !== true) {', to: 'if (res.deny === "never" && e.isTeammate !== true) {' },
   { name: 'lead-start-of-teammate-told', file: 'hooks/mission/hooks.tsx', from: 'if (res.deny === undefined && e.isTeammate !== true) {', to: 'if (res.deny === undefined) {' },
-  { name: 'lead-foreground-spawn-unmarked', file: 'hooks/lead/news.ts', from: 'return f.background ? line : `${line} · не в фоне`', to: 'return line' },
+  { name: 'lead-foreground-spawn-unmarked', file: 'hooks/lead/news.ts', from: 'return f.background ? line : `${line}${FOREGROUND}`', to: 'return line' },
   { name: 'lead-end-line-dropped', file: 'hooks/register.tsx', from: 'await update($, leadA, cur => pushNews(cur, line))', to: 'await update($, leadA, cur => cur)' },
   { name: 'lead-end-oe-is-lifetime', file: 'hooks/lead/journal.ts', from: '(row.oe ?? 0) - (row.journaledOe ?? 0)', to: '(row.oe ?? 0)' },
   { name: 'lead-team-row-without-oe', file: 'hooks/lead/team.ts', from: 'const oe = r.oe ?? 0', to: 'const oe = r.oe' },
+  // Start and end lines merge by type; a workflow agent is never marked; starts cannot push an alarm out of the cap.
+  { name: 'lead-workflow-spawn-marked', file: 'hooks/mission/hooks.tsx', from: 'background: e.workflow !== undefined || e.background,', to: 'background: e.background,' },
+  { name: 'lead-starts-not-merged', file: 'hooks/lead/news.ts', from: 'starts.length > 1', to: 'starts.length > 99' },
+  { name: 'lead-ends-not-merged', file: 'hooks/lead/news.ts', from: 'ends.length > 1', to: 'ends.length > 99' },
+  { name: 'lead-cap-drops-alarm-for-start', file: 'hooks/lead/ledger.ts', from: 'news.splice(routine >= 0 ? routine : 0, 1)', to: 'news.splice(0, 1)' },
   { name: 'lead-council-member-not-remembered', file: 'hooks/mission/hooks.tsx', from: 'memberId !== undefined && isCouncilPrompt(e.prompt)', to: 'memberId === "never" && isCouncilPrompt(e.prompt)' },
 ]
 

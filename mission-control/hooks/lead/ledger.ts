@@ -2,6 +2,7 @@
 
 import type { Lead } from '../../types'
 import type { LeadConfig } from './config'
+import { isRoutine } from './news'
 
 export const EMPTY_LEAD: Lead = Object.freeze({
   byAgent: Object.freeze({}),
@@ -55,6 +56,15 @@ export function isExhausted(left: { session: number | null; run: number | null; 
   return [left.session, left.run, left.agent].some((v) => v !== null && v <= 0)
 }
 
+/**
+ * Adds a news line. Past NEWS_KEEP the oldest start or end line goes first, so a burst of starts cannot push an
+ * alarm out; only when there is none does the oldest line go.
+ */
 export function pushNews(l: Lead, line: string): Lead {
-  return { ...l, news: [...l.news, line].slice(-NEWS_KEEP) }
+  const news = [...l.news, line]
+  while (news.length > NEWS_KEEP) {
+    const routine = news.findIndex(isRoutine)
+    news.splice(routine >= 0 ? routine : 0, 1)
+  }
+  return { ...l, news }
 }

@@ -3,8 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AgentRow } from '../types'
 import { leadConfigOf } from '../hooks/lead/config'
 import { journalLine } from '../hooks/lead/journal'
+import { digestOf, mergedNews } from '../hooks/lead/digest'
 import { endedLine, startedLine } from '../hooks/lead/news'
-import { EMPTY_LEAD } from '../hooks/lead/ledger'
+import { EMPTY_LEAD, pushNews } from '../hooks/lead/ledger'
 import { teamTable } from '../hooks/lead/team'
 import { modelText } from '../hooks/mission/pane'
 import { complete, engineBeneath, spawn, step, submit } from './helpers'
@@ -122,7 +123,99 @@ describe('the digest says who started and who finished', () => {
     await submit($, 'прогон')
     for (let i = 0; i < 6; i += 1) await spawn($, { subagentType: 'scout', description: 'шаг', model: 'sonnet', background: true })
     await submit($, 'что нового?')
-    expect(contextOf(engine)).toBe('запущен: шаг · sonnet · — ×6')
+    expect(contextOf(engine)).toBe('запущены: 6 — шаг (sonnet) ×6')
+  })
+
+  test('a workflow agent is never marked as outside the background; a plain Agent spawn still is', async ($, on) => {
+    const engine = engineBeneath(on, { spawnModel: SONNET })
+    await submit($, 'прогон')
+    await spawn($, { subagentType: 'coder', description: 'в workflow', model: 'sonnet', workflow: 'wf_1' })
+    await submit($, 'раз')
+    expect(contextOf(engine)).toBe('запущен: в workflow · sonnet · —')
+    await spawn($, { subagentType: 'coder', description: 'через Agent', model: 'sonnet' })
+    await submit($, 'два')
+    expect(contextOf(engine)).toBe('запущен: через Agent · sonnet · — · не в фоне')
+  })
+
+  test('twelve distinct starts are one digest line and an alarm is still in it', async ($, on) => {
+    const engine = engineBeneath(on, { spawnModel: SONNET })
+    await submit($, 'прогон')
+    for (let i = 0; i < 12; i += 1) await spawn($, { subagentType: 'scout', description: `задача ${i}`, model: 'sonnet', background: true })
+    await submit($, 'что нового?')
+    const lines = contextOf(engine).split('\n')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]?.startsWith('запущены: 12 — ')).toBe(true)
+  })
+})
+
+const alarm = 'найти — вызов идёт 25 мин'
+const start = (label: string, tail = ''): string => `запущен: ${label} · sonnet · —${tail}`
+const fg = ' · не в фоне'
+const lead = (news: string[]) => ({ ...EMPTY_LEAD, news })
+
+describe('routine lines merge', () => {
+  test('one line keeps its own format; two or more become one line with a count', () => {
+    expect(mergedNews([start('найти')])).toEqual([start('найти')])
+    expect(mergedNews([start('найти'), start('править')])).toEqual(['запущены: 2 — найти (sonnet); править (sonnet)'])
+  })
+  test('the header counts the starts outside the background; a tier not known and an effort known are told', () => {
+    const news = [start('a', fg), 'запущен: b · — · high', start('c')]
+    expect(mergedNews(news)).toEqual(['запущены: 3 (не в фоне: 1) — a (sonnet, не в фоне); b (high); c (sonnet)'])
+  })
+  test('identical entries collapse to ×N', () => {
+    expect(mergedNews([start('шаг'), start('шаг'), start('шаг')])).toEqual(['запущены: 3 — шаг (sonnet) ×3'])
+  })
+  test('ends merge with the summed OE and each outcome', () => {
+    const news = ['закончил: a · готов · 1000 OE', 'закончил: b · ошибка · 500 OE']
+    expect(mergedNews(news)).toEqual(['закончили: 2 (1500 OE) — a (готов, 1000 OE); b (ошибка, 500 OE)'])
+    expect(mergedNews([news[0] ?? ''])).toEqual([news[0] ?? ''])
+  })
+  test('the merged line stands where the first one stood; other lines keep their order', () => {
+    const news = [alarm, start('a'), 'советчик вызван: x', start('b'), 'закончил: a · готов · 10 OE']
+    expect(mergedNews(news)).toEqual([alarm, 'запущены: 2 — a (sonnet); b (sonnet)', 'советчик вызван: x', 'закончил: a · готов · 10 OE'])
+  })
+  test('a label with the separator in it is read from the right', () => {
+    expect(mergedNews([start('а · б'), start('в')])).toEqual(['запущены: 2 — а · б (sonnet); в (sonnet)'])
+  })
+  test('a merged line is clipped like the others', () => {
+    const [line] = mergedNews(Array.from({ length: 12 }, (_, i) => start(`длинная задача номер ${i}`)))
+    expect(Array.from(line ?? '').length).toBeLessThanOrEqual(200)
+    expect(line?.startsWith('запущены: 12 — ')).toBe(true)
+    expect(line?.endsWith('…')).toBe(true)
+  })
+  test('twelve starts and an alarm: the digest keeps the alarm, the starts are one line', () => {
+    const news = [...Array.from({ length: 12 }, (_, i) => start(`задача ${i}`)), alarm]
+    const text = digestOf(lead(news), leadConfigOf({})) ?? ''
+    expect(text).toContain(alarm)
+    expect(text.split('\n').filter(l => l.startsWith('запущ'))).toHaveLength(1)
+    expect(text).not.toContain('…и ещё')
+  })
+})
+
+describe('the news cap never drops an alarm for a start', () => {
+  test('an alarm survives any number of starts after it', () => {
+    let l = pushNews(EMPTY_LEAD, alarm)
+    for (let i = 0; i < 40; i += 1) l = pushNews(l, start(`задача ${i}`))
+    expect(l.news).toContain(alarm)
+    expect(l.news).toHaveLength(20)
+    // the newest routine lines stay, the oldest go
+    expect(l.news.at(-1)).toBe(start('задача 39'))
+  })
+  test('a start does not displace a full list of other news; an end does not either', () => {
+    const full = Array.from({ length: 20 }, (_, i) => `тревога ${i}`)
+    expect(pushNews(lead(full), start('a')).news).toEqual(full)
+    expect(pushNews(lead(full), 'закончил: a · готов · 10 OE').news).toEqual(full)
+  })
+  test('other news still drops the oldest line first', () => {
+    const full = Array.from({ length: 20 }, (_, i) => `тревога ${i}`)
+    expect(pushNews(lead(full), 'тревога 20').news).toEqual([...full.slice(1), 'тревога 20'])
+  })
+  test('an alarm pushes out a routine line, not the oldest alarm', () => {
+    const news = ['тревога 0', start('a'), ...Array.from({ length: 18 }, (_, i) => `тревога ${i + 1}`)]
+    const out = pushNews(lead(news), 'тревога 19').news
+    expect(out).toHaveLength(20)
+    expect(out).toContain('тревога 0')
+    expect(out).not.toContain(start('a'))
   })
 })
 

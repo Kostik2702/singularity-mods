@@ -337,7 +337,8 @@ export function registerMission(
           label: agentLabel({ description: e.description, name: e.name ?? null, type: e.subagentType }, res.agentId ?? ''),
           tier: tierOf(res.model ?? input.model ?? e.model),
           effort: row?.effort ?? null,
-          background: e.background,
+          // The engine's `background` does not apply to a workflow agent: never a reason to mark it.
+          background: e.workflow !== undefined || e.background,
         })
         await update($, leadA, cur => pushNews(cur, line))
       } catch {
