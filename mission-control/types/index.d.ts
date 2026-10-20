@@ -262,6 +262,64 @@ export type Lead = {
   flags: string[]
 }
 
+/** One line of the Jev journal (the engine's `jev/log.jsonl`), as the Jev tab keeps it. */
+export type JevEntry = {
+  ts: string
+  session: string | null
+  kind: string
+  /** The first 80 characters of what was asked. */
+  head: string
+  size: string | null
+  confidence: number | null
+  decided: 'jev' | 'self' | null
+  route: string | null
+  /** USD; 0 on an error. */
+  cost: number
+  ms: number | null
+  /** `<kind>:<status>` or null. */
+  error: string | null
+  /** A call made under MB_JEV_TEST. */
+  test: boolean
+}
+
+/** What `mb jev status --json` says; a field it does not carry is null. Never the key itself. */
+export type JevStatus = {
+  enabled: boolean | null
+  keyFound: boolean | null
+  model: string | null
+  /** `jev_budget_usd`: what the owner topped up. */
+  budget: number | null
+  journal: string | null
+  /** The engine's own figures (all-time across rotation, this session, budget less total); null when it gives none. */
+  totalCost: number | null
+  sessionCost: number | null
+  balance: number | null
+}
+
+export type JevSummary = {
+  calls: number
+  sessionCalls: number
+  sessionCost: number
+  totalCost: number
+  bySize: Record<string, number>
+  self: number
+  errors: number
+}
+
+/** The Jev tab's data: the journal's end, its totals and where they came from. */
+export type JevState = {
+  status: JevStatus | null
+  /** How the journal's path was found: the CLI's status, or derived from the vault. */
+  source: 'cli' | 'derived' | null
+  path: string | null
+  sessionId: string | null
+  /** The newest lines, newest first. */
+  rows: JevEntry[]
+  summary: JevSummary
+  /** Why there is no data, or null. */
+  problem: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'mission-control': {
@@ -289,6 +347,10 @@ declare module 'claude-code' {
       jobsDir: string | null
       /** The Processes tab's last `$.ui.open` outcome. */
       jobsPaneStatus: string | null
+      /** The Jev tab's last `$.ui.open` outcome. */
+      jevPaneStatus: string | null
+      /** The Jev tab's data. */
+      jev: JevState | null
       /** The team-lead layer's ledger and counters. */
       lead: Lead
     }

@@ -57,7 +57,7 @@ export type Theme = {
   slate: Slate | null
   colors: Palette
   /** Pane titles, as the engine draws them on the tab. */
-  titles: { agents: string; jobs: string; memory: string }
+  titles: { agents: string; jobs: string; memory: string; jev: string }
   /** A centred motto above each tab's body; null draws none. */
   banner: { agents: string; jobs: string; memory: string } | null
   /** Section heading: `lead` + title + `mark`, then `fill` to the width. */
@@ -119,7 +119,7 @@ export const CLASSIC: Theme = {
   id: 'classic',
   slate: null,
   colors: COLORS,
-  titles: { agents: 'Агенты', jobs: 'Процессы', memory: 'Память' },
+  titles: { agents: 'Агенты', jobs: 'Процессы', memory: 'Память', jev: 'Jev' },
   banner: null,
   rule: { lead: '── ', mark: '', fill: '─' },
   tree: { branch: '├─', last: '└─', stem: '│ ' },
@@ -254,7 +254,7 @@ export const WARHAMMER: Theme = {
     serious: '#ff7a24',
     critical: '#f03a2e',
   },
-  titles: { agents: '✠ ЛЕГИОН', jobs: '⌬ ОБРЯДЫ', memory: '✎ АРХИВЫ' },
+  titles: { agents: '✠ ЛЕГИОН', jobs: '⌬ ОБРЯДЫ', memory: '✎ АРХИВЫ', jev: '☉ JEV' },
   banner: { agents: 'Император защищает', jobs: 'Хвала Омниссии', memory: 'Знание — сила, храни его' },
   rule: { lead: '══ ✠ ', mark: '✠ ', fill: '═' },
   tree: { branch: '╠═', last: '╚═', stem: '║ ' },

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Alerts, ClaudeMdFile, Job, TurnRow } from '../types'
+import type { Alerts, ClaudeMdFile, Job, JevEntry, JevStatus, TurnRow } from '../types'
 import { JOBS_PANE, registerJobs } from './jobs/hooks'
 import {
   FULL_READ_MAX,
@@ -15,6 +15,8 @@ import {
   toAnnounce,
 } from './jobs/model'
 import type { OutputRead } from './jobs/model'
+import { JEV_PANE, registerJev } from './jev/hooks'
+import { FULL_READ_MAX as JEV_FULL_READ_MAX, POLL_MS as JEV_MS, SHOWN as JEV_SHOWN, journalPathOf, newest, parseJournal, parseStatus, previousOf, summarize, vaultOf } from './jev/model'
 import { MEMORY_PANE, registerMemory } from './memory/hooks'
 import { BOOT_MS, markBoot } from './lib/boot'
 import { cogCells } from './lib/cog'
@@ -49,6 +51,8 @@ const MAX_TURNS = 50
 const JOBS_MS = 1000
 /** While the tasks folder is not found, it is looked for again at most this often. */
 const JOBS_DIR_RETRY_MS = 30_000
+/** `mb jev status` (enabled, key, model, budget) is asked again at most this often; the journal itself every JEV_MS. */
+const JEV_STATUS_MS = 30_000
 const ALERTS_EVERY_MS = 5 * 60_000
 /** Timers on the Agents tab are redrawn once a second, and only while something works. */
 const TICK_MS = 1000
@@ -84,12 +88,20 @@ const agentsA = atom({ plugin: 'mission-control', key: 'agents' } as const, [])
 const jobsA = atom({ plugin: 'mission-control', key: 'jobs' } as const, [])
 const jobsDirA = atom({ plugin: 'mission-control', key: 'jobsDir' } as const, null)
 const jobsPaneStatusA = atom({ plugin: 'mission-control', key: 'jobsPaneStatus' } as const, null)
+const jevA = atom({ plugin: 'mission-control', key: 'jev' } as const, null)
+const jevPaneStatusA = atom({ plugin: 'mission-control', key: 'jevPaneStatus' } as const, null)
 const leadA = atom({ plugin: 'mission-control', key: 'lead' } as const, EMPTY_LEAD)
 
 type $ = EngineInterface
 
 /** When the tasks folder was last looked for: a module variable, a reload looks again at once. */
 let jobsDirTriedAt = Number.NEGATIVE_INFINITY
+/** The Jev journal's path once found, how, and the file's size and mtime when it was last read: module variables, a reload looks again. */
+let jevPath: string | null = null
+let jevSource: 'cli' | 'derived' | null = null
+let jevStatus: JevStatus | null = null
+let jevStatusAt = Number.NEGATIVE_INFINITY
+let jevSig = ''
 /** Until when the cog rests after a refused blit: a module variable, a reload tries at once. */
 let cogRestsUntil = Number.NEGATIVE_INFINITY
 /** Until when the servo-skull rests after a refused blit (Обряды closed or behind another tab). */
@@ -290,6 +302,19 @@ async function openJobsPane($: $, theme: Theme): Promise<void> {
   }
 }
 
+/** The Jev tab is opened by /jev, not unasked; a tab left open under another theme's title is opened again under the new one. */
+async function retitleJevPane($: $, theme: Theme): Promise<void> {
+  try {
+    const mine = (await $.ui.panes()).find(p => p.id === JEV_PANE)
+    if (mine === undefined || mine.title === theme.titles.jev) return
+    await $.ui.close({ id: JEV_PANE })
+    const opened = await $.ui.open({ id: JEV_PANE, title: theme.titles.jev })
+    await update($, jevPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
+  } catch (err) {
+    await update($, jevPaneStatusA, () => `open failed: ${reason(err)}`)
+  }
+}
+
 /**
  * A long action has begun: bring the Processes tab to the front, so its progress is on
  * screen without asking. The tab opened last is the one shown, so an open tab behind
@@ -363,6 +388,128 @@ async function readTail($: $, path: string, size: number): Promise<string | null
     return ran.exitCode === 0 ? ran.stdout : null
   } catch {
     return null
+  }
+}
+
+/** `mb jev status --json`, at most every JEV_STATUS_MS; the last answer stands when the CLI cannot be run. */
+async function askJevStatus($: $, now: number): Promise<void> {
+  if (now - jevStatusAt < JEV_STATUS_MS) return
+  jevStatusAt = now
+  try {
+    const ran = await $.process.run(['mb', 'jev', 'status', '--json'], { timeoutMs: 8000 })
+    const status = ran.exitCode === 0 ? parseStatus(ran.stdout) : null
+    if (status !== null) {
+      jevStatus = status
+      if (jevPath === null && status.journal !== null) {
+        jevPath = status.journal
+        jevSource = 'cli'
+      }
+    }
+  } catch {
+    // no `mb` on the PATH: the path is derived below
+  }
+}
+
+/** The path the engine writes the journal to, derived from the vault in ~/.singularity.json and the host name. */
+async function deriveJevPath($: $): Promise<string | null> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  if (home === undefined) return null
+  const vault = vaultOf(await $.fs.read(`${home.replace(/[\\/]+$/, '')}/.singularity.json`))
+  const host = (await $.process.run(['hostname'], { timeoutMs: 5000 })).stdout.trim()
+  return vault === null || host.length === 0 ? null : journalPathOf(vault, host)
+}
+
+/**
+ * Every JEV_MS, while the Jev tab is open: the journal is read again when its size or time changed. The path
+ * is found once (the CLI's status, else derived like the engine does) and kept. A
+ * missing file, a half-written last line and a rotation to log.1.jsonl are all normal.
+ * Never throws; what went wrong is shown on the tab.
+ */
+async function pollJev($: $, force = false): Promise<void> {
+  try {
+    // Nothing is read, and `mb` is never run, for a session that has not opened the tab.
+    if (!force && !(await $.ui.panes()).some(p => p.id === JEV_PANE)) return
+    const now = await $.clock.now()
+    await askJevStatus($, now)
+    if (jevPath === null) {
+      jevPath = await deriveJevPath($)
+      if (jevPath !== null) jevSource = 'derived'
+    }
+    let sessionId: string | null = null
+    try {
+      sessionId = await $.session.id()
+    } catch {
+      // the figure for this session is then zero
+    }
+    const path = jevPath
+    if (path === null) {
+      await update($, jevA, () => ({
+        status: jevStatus,
+        source: null,
+        path: null,
+        sessionId,
+        rows: [],
+        summary: summarize([], sessionId),
+        problem: 'путь журнала не найден: нет `mb jev status` и ~/.singularity.json (vault_path)',
+      }))
+      $.ui.invalidate('ui.render')
+      return
+    }
+    const prev = previousOf(path)
+    const sigOf = async (p: string): Promise<{ sig: string; size: number } | null> => {
+      try {
+        const st = await $.fs.stat(p)
+        return { sig: `${st.size}:${st.mtimeMs}`, size: st.size }
+      } catch {
+        return null
+      }
+    }
+    const cur = await sigOf(path)
+    const old = await sigOf(prev)
+    const sig = `${sessionId ?? ''}|${cur?.sig ?? '-'}|${old?.sig ?? '-'}|${jevStatus === null ? '' : JSON.stringify(jevStatus)}`
+    if (sig === jevSig) return
+    jevSig = sig
+    // No ranged read exists: a file past the read limit is not read, the CLI gives its newest lines.
+    let isBig = false
+    const parts: JevEntry[] = []
+    for (const [file, st] of [[prev, old], [path, cur]] as const) {
+      if (st === null) continue
+      if (st.size > JEV_FULL_READ_MAX) {
+        isBig = true
+        continue
+      }
+      parts.push(...parseJournal(await $.fs.read(file)))
+    }
+    if (isBig) {
+      const ran = await $.process.run(['mb', 'jev', 'log', '--tail', String(JEV_SHOWN)], { timeoutMs: 8000 })
+      parts.push(...(ran.exitCode === 0 ? parseJournal(ran.stdout) : []))
+    }
+    const problem = isBig ? `журнал больше 4 МБ: показаны последние ${JEV_SHOWN} строк из mb jev log --tail ${JEV_SHOWN}, суммы — из mb jev status` : cur === null ? 'журнала пока нет (Jev ещё не вызывали)' : null
+    await update($, jevA, () => ({
+      status: jevStatus,
+      source: jevSource,
+      path,
+      sessionId,
+      rows: newest(parts, JEV_SHOWN),
+      summary: summarize(parts, sessionId),
+      problem,
+    }))
+    $.ui.invalidate('ui.render')
+  } catch (err) {
+    jevSig = ''
+    try {
+      await update($, jevA, jev => ({
+        status: jevStatus,
+        source: jevSource,
+        path: jevPath,
+        sessionId: jev?.sessionId ?? null,
+        rows: jev?.rows ?? [],
+        summary: jev?.summary ?? summarize([], null),
+        problem: `журнал не прочитан: ${reason(err)}`,
+      }))
+    } catch {
+      // the next poll tries again
+    }
   }
 }
 
@@ -674,6 +821,18 @@ export const register: Register = (on, options) => {
         })
       },
       async () => {
+        await $.command.register({
+          name: 'jev',
+          description: 'Jev: журнал вызовов, расход за сессию и всего, остаток; /jev close|status',
+          argumentHint: '[close|status]',
+        })
+      },
+      async () => {
+        $.clock.every(JEV_MS, () => void pollJev($))
+        await retitleJevPane($, theme)
+        await pollJev($)
+      },
+      async () => {
         $.clock.every(JOBS_MS, () => void pollJobs($, theme))
         // Found now, so a foreground call's file can be told apart from the first call on.
         if ((await read($, jobsDirA)) === null) {
@@ -807,6 +966,30 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'mission-control: вкладка «Процессы» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
   }).catch(($, e, next) => ({ text: `mission-control: /jobs упала: ${reason(next.error)}` }))
 
+  on('command.run', { command: 'jev' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg === 'close') {
+      await $.ui.close({ id: JEV_PANE })
+      return { text: 'mission-control: вкладка «Jev» закрыта (/jev — открыть).' }
+    }
+    if (arg === 'status') {
+      try {
+        const ran = await $.process.run(['mb', 'jev', 'status'], { timeoutMs: 8000 })
+        if (ran.exitCode === 0 && ran.stdout.trim().length > 0) return { text: ran.stdout.trimEnd() }
+        const why = ran.stderr.trim().split('\n')[0] ?? ''
+        return { text: `mb jev status недоступен: ${why.length > 0 ? why.slice(0, 120) : `код ${ran.exitCode}`}` }
+      } catch (err) {
+        return { text: `mb jev status недоступен: ${reason(err).slice(0, 120)}` }
+      }
+    }
+    if (arg.length > 0) return { text: `mission-control: не знаю «${arg}». /jev — открыть вкладку, /jev close, /jev status.` }
+    const opened = await $.ui.open({ id: JEV_PANE, title: theme.titles.jev })
+    await update($, jevPaneStatusA, () => (opened.isPlaced ? 'placed' : `not placed: ${opened.reason}`))
+    jevSig = ''
+    await pollJev($, true)
+    return { text: opened.isPlaced ? 'mission-control: вкладка «Jev» открыта.' : `mission-control: вкладка не встала: ${opened.reason}` }
+  }).catch(($, e, next) => ({ text: `mission-control: /jev упала: ${reason(next.error)}` }))
+
   on('command.run', { command: 'mem' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
     if (arg === 'close') {
@@ -862,6 +1045,7 @@ export const register: Register = (on, options) => {
       jobs: await read($, jobsA),
       jobsDir: await read($, jobsDirA),
       jobsPaneStatus: await read($, jobsPaneStatusA),
+      jevPaneStatus: await read($, jevPaneStatusA),
       panes,
       lastTurnEndAt: await read($, lastEndA),
     }
@@ -906,5 +1090,6 @@ export const register: Register = (on, options) => {
   registerMission(on, theme, leadConfig, crestFile, portraitsDir)
   registerMemory(on, theme, sealFile, crestFile, leadConfig)
   registerJobs(on, theme, skullDir)
+  registerJev(on, theme)
   registerChrome(on, theme)
 }
